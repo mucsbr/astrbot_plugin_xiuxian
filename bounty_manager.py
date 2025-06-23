@@ -16,42 +16,6 @@ class BountyManager:
                 b_data['id'] = random.randint(1000, 9999) 
                 self.all_bounties_template.append(b_data)
 
-    #def generate_bounties(self, user_level: str) -> list[dict]:
-    #    """
-    #    为用户生成一组悬赏令
-    #    :param user_level: 用户当前的境界等级
-    #    """
-    #    if not self.all_bounties_template:
-    #        return []
-
-    #    num_to_generate = min(len(self.all_bounties_template), 5)
-    #    generated_list = random.sample(self.all_bounties_template, num_to_generate)
-    #    
-    #    user_rank = USERRANK.get(user_level, 99)
-    #    
-    #    for bounty in generated_list:
-    #        base_reward = bounty.get("succeed_thank", 100)
-    #        reward_multiplier = 1 + (50 - user_rank) * 0.1
-    #        scaled_reward = int(base_reward * reward_multiplier)
-    #        bounty['succeed_thank'] = scaled_reward
-    #        
-    #        if bounty['type'] in ["捉妖", "暗杀"]:
-    #            player_level_info = self.level_data.get(user_level, {})
-    #            
-    #            # v-- 这是本次修正的核心：使用 .get() 方法并提供默认值 --v
-    #            base_hp = player_level_info.get('hp', 100)   # 如果'hp'不存在，则默认为100
-    #            base_atk = player_level_info.get('atk', 10)    # 如果'atk'不存在，则默认为10
-    #            
-    #            monster_hp = int(base_hp * (random.uniform(1.5, 3.0)))
-    #            monster_atk = int(base_atk * (random.uniform(0.8, 1.5)))
-    #            # ^-- 这是本次修正的核心 --^
-    #            
-    #            bounty['monster'] = f"{user_level}期的{bounty['name']}目标"
-    #            bounty['hp'] = monster_hp
-    #            bounty['atk'] = monster_atk
-    #    
-    #    return generated_list
-
     def generate_bounties(self, user_level: str) -> list[dict]:
         """为用户生成一组悬赏令，怪物属性动态生成"""
         if not self.all_bounties_template:

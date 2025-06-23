@@ -1024,6 +1024,7 @@ class XiuxianPlugin(Star):
             return
 
         current_world_boss_data = self.world_boss
+        boss_hp_before = current_world_boss_data['hp']
         # 记录攻击者
         current_world_boss_data.setdefault('attackers', set()).add(user_id)
 
@@ -1048,6 +1049,8 @@ class XiuxianPlugin(Star):
         # --- 结束存储 ---
         
         msg_lines = battle_result['log'] # 获取战斗日志
+        boss_hp_after = battle_result['p2_hp_final']
+        damage_this_round = boss_hp_before - boss_hp_after
 
         # 更新玩家实际HP (BOSS战是真实伤害)
         # battle_result['p1_hp_final'] 是玩家战斗后的模拟HP
@@ -1059,6 +1062,11 @@ class XiuxianPlugin(Star):
         self.XiuXianService.update_boss_hp(current_world_boss_data['id'], boss_new_hp)
         current_world_boss_data['hp'] = boss_new_hp # 更新内存中的BOSS血量
 
+        # 记录伤害日志 (确保'damage_log'字典存在)
+        current_world_boss_data.setdefault('damage_log', {})
+        current_world_boss_data['damage_log'][user_id] = current_world_boss_data['damage_log'].get(user_id, 0) + damage_this_round
+        msg_lines.append(f"道友对世界BOSS造成伤害：{damage_this_round}点")
+
         # 设置玩家CD
         self.XiuXianService.set_user_cd(user_id, boss_cd_duration, boss_cd_type)
 
@@ -1066,20 +1074,57 @@ class XiuxianPlugin(Star):
         if battle_result['winner'] == player_real_info['user_id']: # 玩家击败了BOSS
             msg_lines.append(f"\n🎉🎉🎉 恭喜道友【{player_real_info['user_name']}】神威盖世，成功击败了世界BOSS【{boss_combat_info['name']}】！ 🎉🎉🎉")
 
-            boss_total_exp_reward = boss_combat_info.get('exp', 1000)
-            boss_total_stone_reward = boss_combat_info.get('stone', 1000)
 
+            total_exp_reward_pool = boss_combat_info.get('exp', 1000)
+            total_stone_reward_pool = boss_combat_info.get('stone', 1000)
             final_hit_rewards, participant_drops = self.XiuXianService.get_boss_drop(
-                {"jj": boss_combat_info['jj'], "exp": boss_total_exp_reward, "stone": boss_total_stone_reward}
+                {"jj": boss_combat_info['jj'], "exp": total_exp_reward_pool, "stone": total_stone_reward_pool}
             )
 
-            # a. 处理最后一击奖励 (当前攻击者即为最后一击者)
-            if final_hit_rewards["exp"] > 0:
-                self.XiuXianService.update_exp(user_id, final_hit_rewards["exp"])
-                msg_lines.append(f"最后一击额外奖励：修为+{final_hit_rewards['exp']}")
-            if final_hit_rewards["stone"] > 0:
-                self.XiuXianService.update_ls(user_id, final_hit_rewards["stone"], 1)
-                msg_lines.append(f"最后一击额外奖励：灵石+{final_hit_rewards['stone']}")
+            damage_log = current_world_boss_data.get('damage_log', {})
+            # 1. 计算总伤害
+            total_damage_dealt = sum(damage_log.values())
+            if total_damage_dealt <= 0:  # 防止除以零错误
+                total_damage_dealt = 1
+
+            # 2. 构建伤害贡献榜和分发奖励
+            reward_details_lines = ["\n--- 伤害贡献榜 ---"]
+            sorted_damagers = sorted(damage_log.items(), key=lambda item: item[1], reverse=True)
+
+            for rank, (damager_id, damage_dealt) in enumerate(sorted_damagers, 1):
+                damager_info = self.XiuXianService.get_user_message(damager_id)
+                if not damager_info: continue
+
+                damage_percentage = damage_dealt / total_damage_dealt
+
+                # 计算并分发奖励
+                exp_reward = int(final_hit_rewards["exp"] * damage_percentage)
+                stone_reward = int(final_hit_rewards["stone"] * damage_percentage)
+
+                reward_str_parts = []
+                if exp_reward > 0:
+                    self.XiuXianService.update_exp(damager_id, exp_reward)
+                    reward_str_parts.append(f"修为+{exp_reward}")
+                if stone_reward > 0:
+                    self.XiuXianService.update_ls(damager_id, stone_reward, 1)
+                    reward_str_parts.append(f"灵石+{stone_reward}")
+
+                # 格式化榜单消息
+                reward_details_lines.append(
+                    f"第{rank}名:【{damager_info.user_name}】造成 {damage_dealt} 伤害 (占比: {damage_percentage:.2%})\n"
+                    f"  奖励: {', '.join(reward_str_parts) if reward_str_parts else '无'}"
+                )
+
+            msg_lines.extend(reward_details_lines)
+
+            #
+            # # a. 处理最后一击奖励 (当前攻击者即为最后一击者)
+            # if final_hit_rewards["exp"] > 0:
+            #     self.XiuXianService.update_exp(user_id, final_hit_rewards["exp"])
+            #     msg_lines.append(f"最后一击额外奖励：修为+{final_hit_rewards['exp']}")
+            # if final_hit_rewards["stone"] > 0:
+            #     self.XiuXianService.update_ls(user_id, final_hit_rewards["stone"], 1)
+            #     msg_lines.append(f"最后一击额外奖励：灵石+{final_hit_rewards['stone']}")
             for item_reward in final_hit_rewards["items"]:
                 self.XiuXianService.add_item(user_id, item_reward['id'], item_reward['type'], item_reward['quantity'])
                 msg_lines.append(f"最后一击奇遇：获得【{item_reward['name']}】x{item_reward['quantity']}")
@@ -4955,7 +5000,7 @@ class XiuxianPlugin(Star):
             async for r in self._send_response(event, msg, "物品不存在"): yield r
             return
 
-        allowed_types = ["功法", "辅修功法", "神通", "法器", "防具", "丹药", "药材", "合成丹药", "炼丹炉", "聚灵旗"]
+        allowed_types = ["功法", "辅修功法", "神通", "法器", "防具", "丹药", "商店丹药", "药材", "合成丹药", "炼丹炉", "聚灵旗"]
         item_actual_type = item_data.get('item_type', '未知')
 
         if item_actual_type not in allowed_types:
