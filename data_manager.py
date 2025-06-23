@@ -31,8 +31,6 @@ class DataManager:
 
     def level_data(self):
         """获取境界数据"""
-        logger.info(self.level_jsonpath)
-        logger.info("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1")
         return self._read_json_file(self.level_jsonpath)
 
     def sect_config_data(self):

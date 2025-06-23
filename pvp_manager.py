@@ -35,116 +35,6 @@ class PvPManager:
 
         return max(1, final_damage), is_crit # 至少造成1点伤害
 
-    #@staticmethod
-    #def simulate_player_vs_player_fight(p1_info: dict, p2_info: dict, max_rounds: int = 30) -> dict:
-    #    """
-    #    模拟两个玩家之间的PVP战斗。
-    #    :param p1_info: 玩家1的 get_user_real_info() 返回的完整属性字典
-    #    :param p2_info: 玩家2的 get_user_real_info() 返回的完整属性字典
-    #    :param max_rounds: 最大回合数，防止无限战斗
-    #    :return: 包含战斗结果和详细日志的字典
-    #    """
-
-    #    p1_current_hp = p1_info['hp']
-    #    p1_current_mp = p1_info.get('mp', 999999)
-    #    p2_current_hp = p2_info['hp']
-    #    p2_current_mp = p2_info.get('mp', 999999)
-
-    #    battle_log = [
-    #        f"⚔️ 一场惊心动魄的对决在【{p1_info['user_name']}】与【{p2_info['user_name']}】之间展开！",
-    #        f"【{p1_info['user_name']}】:\n ❤️{p1_current_hp}/{p1_info['max_hp']}\n 💙{p1_current_mp}/{p1_info['max_mp']}\n ⚔️{p1_info['atk']}",
-    #        f"【{p2_info['user_name']}】:\n ❤️{p2_current_hp}/{p2_info['max_hp']}\n 💙{p2_current_mp}/{p2_info['max_mp']}\n ⚔️{p2_info['atk']}",
-    #        "----------------------------------"
-    #    ]
-
-    #    # 先手判定 (简单比较战力，可以后续优化为境界、速度等)
-    #    turn_p1 = p1_info['power'] >= p2_info['power']
-
-    #    for round_num in range(1, max_rounds + 1):
-    #        battle_log.append(f"ዙ 回合 {round_num} ዙ")
-
-    #        if turn_p1:
-    #            attacker, defender = p1_info, p2_info
-    #            attacker_hp, defender_hp = p1_current_hp, p2_current_hp
-    #            attacker_mp = p1_current_mp
-    #        else:
-    #            attacker, defender = p2_info, p1_info
-    #            attacker_hp, defender_hp = p2_current_hp, p1_current_hp
-    #            attacker_mp = p2_current_mp
-
-    #        # --- 攻击方行动 ---
-    #        # TODO: 此处未来可以加入神通选择逻辑
-    #        # 目前简化为普通攻击
-
-    #        # 检查攻击方是否有足够的MP使用最基本的神通 (如果未来加入)
-    #        # if attacker_mp < min_skill_cost:
-    #        #    action = "普通攻击"
-    #        # else:
-    #        #    action = "选择使用神通或普攻"
-
-    #        action_desc = "发起了凌厉的攻势" # 默认普攻描述
-
-    #        # 计算伤害
-    #        damage_dealt, was_crit = PvPManager._calculate_damage(
-    #            attacker['atk'],
-    #            defender['defense_rate'],
-    #            attacker['crit_rate'],
-    #            attacker['crit_damage']
-    #        )
-
-    #        crit_text = "✨暴击！" if was_crit else ""
-    #        battle_log.append(
-    #            f"💥【{attacker['user_name']}】{action_desc}，{crit_text}对【{defender['user_name']}】造成了 {damage_dealt} 点伤害！"
-    #        )
-
-    #        defender_hp -= damage_dealt
-
-    #        # 更新血量
-    #        if turn_p1:
-    #            p2_current_hp = defender_hp
-    #        else:
-    #            p1_current_hp = defender_hp
-
-    #        battle_log.append(f"🩸【{defender['user_name']}】剩余气血: {max(0, defender_hp)}")
-
-    #        # TODO: 在此处触发攻击方的辅修功法效果，如吸血
-    #        sub_buff_p1 = attacker.get('buff_info').sub_buff if attacker.get('buff_info') else 0
-    #        if sub_buff_p1 != 0:
-    #            sub_info = Items().get_data_by_item_id(sub_buff_p1) # 假设Items()可以全局访问或传入
-    #            if sub_info and sub_info.get('buff_type') == '6': # 吸血
-    #                leech_amount = int(damage_dealt * (float(sub_info.get('buff', 0))/100))
-    #                attacker_hp = min(attacker['max_hp'], attacker_hp + leech_amount)
-    #                battle_log.append(f"🩸【{attacker['user_name']}】通过吸血回复了 {leech_amount} 点气血！")
-    #                if turn_p1: p1_current_hp = attacker_hp
-    #                else: p2_current_hp = attacker_hp
-
-
-    #        if defender_hp <= 0:
-    #            battle_log.append("----------------------------------")
-    #            battle_log.append(f"👑【{attacker['user_name']}】击败了【{defender['user_name']}】，获得了胜利！")
-    #            return {
-    #                "winner": attacker['user_id'],
-    #                "loser": defender['user_id'],
-    #                "log": battle_log,
-    #                "p1_hp_final": p1_current_hp if turn_p1 else max(0, attacker_hp), # 如果p1是攻击者，则p1_current_hp是更新后的
-    #                "p2_hp_final": p2_current_hp if not turn_p1 else max(0, defender_hp)
-    #            }
-
-    #        # 攻守转换
-    #        turn_p1 = not turn_p1
-
-    #    # 达到最大回合数，平局
-    #    battle_log.append("----------------------------------")
-    #    battle_log.append("⌛ 对决已达最大回合数，双方平分秋色！")
-    #    return {
-    #        "winner": None, # 平局
-    #        "loser": None,
-    #        "log": battle_log,
-    #        "p1_hp_final": max(0, p1_current_hp),
-    #        "p2_hp_final": max(0, p2_current_hp)
-    #    }
-# 在 astrbot_plugin_xiuxian/pvp_manager.py 的 PvPManager 类中
-
     @staticmethod
     def simulate_player_vs_player_fight(p1_info_dict: dict, p2_info_dict: dict, max_rounds: int = 30) -> dict:
         items_manager = Items()
@@ -556,7 +446,6 @@ class PvPManager:
         :param service_items_instance: Items 类的实例，用于获取物品信息
         :return: 包含效果描述的日志列表
         """
-        logger.info("use _apply_end_of_round_sub_buff_effects")
         effect_log = []
         if not player_state: # 检查 player_state 对象本身是否为 None
             return effect_log
@@ -581,7 +470,6 @@ class PvPManager:
         original_hp = player_state.hp # <<< 修正
         original_mp = player_state.mp # <<< 修正
 
-        logger.info("buff_type" + " " + str(buff_type) + str(bool(buff_type == "4")))
         if buff_type == "4":  # 每回合气血回复
             # 注意：max_hp 在 PlayerBattleInternalState 中应该叫 base_hp (战斗开始时的最大血量)
             # 或者如果 PlayerBattleInternalState 也有一个动态的 max_hp (受buff影响的当前最大血量)，则用那个

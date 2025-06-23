@@ -173,6 +173,8 @@ class XiuxianPlugin(Star):
 【功法帮助】：查看功法神通相关指令
 【宗门帮助】：查看宗门相关指令
 【灵庄帮助】：查看灵庄存取款相关指令
+【万法宝鉴】：查看神通抽奖池子相关指令
+【神兵宝库】：查看法器抽奖池子相关指令
 """
         title = '修仙模拟器帮助信息'
         font_size = 24 # 减小字体以容纳更多内容
@@ -598,7 +600,7 @@ class XiuxianPlugin(Star):
             yield event.chain_result([Comp.Image.fromFileSystem(str(await get_msg_pic(await pic_msg_format(msg, event))))])
             return
 
-        result = self.XiuXianService.equip_item(user_id, item_in_backpack.goods_id, 1)
+        result = self.XiuXianService.equip_item(user_id, item_in_backpack.goods_id)
         yield event.chain_result([Comp.Image.fromFileSystem(str(await get_msg_pic(await pic_msg_format(result["message"], event))))])
 
     @filter.command("卸下")
@@ -5101,13 +5103,78 @@ class XiuxianPlugin(Star):
         )
         async for r in self._send_response(event, help_msg.strip(), "万法宝鉴指引"): yield r
     
-    async def _handle_gacha_pull(self, event: AstrMessageEvent, is_ten_pull: bool):
-        """统一处理单抽和十连抽的通用逻辑"""
+    # async def _handle_gacha_pull(self, event: AstrMessageEvent, is_ten_pull: bool):
+    #     """统一处理单抽和十连抽的通用逻辑"""
+    #
+    #     pool_id = "wanfa_baojian" # 卡池内部ID
+    #     pool_config = self.xiu_config.gacha_pools_config.get(pool_id)
+    #     if not pool_config:
+    #         async for r in self._send_response(event, "错误：万法宝鉴卡池配置未找到。"): yield r
+    #         return
+    #
+    #     user_id = event.get_sender_id()
+    #     is_user, user_info, msg_check = check_user(self.XiuXianService, user_id)
+    #     if not is_user:
+    #         async for r in self._send_response(event, msg_check): yield r
+    #         return
+    #
+    #     pool_id = "wanfa_baojian"
+    #
+    #     # 调用 GachaManager 执行抽奖
+    #     # 注意：gacha_manager.perform_gacha 现在应该是一个同步方法，因为它不涉及异步IO
+    #     # 如果它是异步的，这里需要 await
+    #     # 根据我们之前的设计，GachaManager 的方法都是同步的
+    #     try:
+    #         # 模拟一些处理时间，让用户感觉机器人正在“抽奖”
+    #         processing_msg = "正在沟通天地，演算天机..." if not is_ten_pull else "大法力运转，十方天机尽在掌握..."
+    #         async for r_wait in self._send_response(event, processing_msg, "请稍候"): yield r_wait
+    #         # await asyncio.sleep(random.uniform(1, 2.5)) # 实际机器人中避免不必要的sleep
+    #
+    #         result = self.gacha_manager.perform_gacha(user_id, pool_id, is_ten_pull)
+    #     except Exception as e:
+    #         logger.error(f"万法宝鉴抽奖时发生严重错误: {e}", exc_info=True)
+    #         async for r in self._send_response(event, f"抽奖过程中发生未知异常，请联系管理员！错误: {type(e).__name__}"): yield r
+    #         return
+    #
+    #     title_prefix = "十连结果" if is_ten_pull else "抽奖结果"
+    #     if result["success"]:
+    #         # 刷新用户数据，因为灵石和物品发生了变化
+    #         self.XiuXianService.refresh_user_base_attributes(user_id) # 如果灵石影响属性
+    #         self.XiuXianService.update_power2(user_id) # 重新计算战力
+    #
+    #         # 为了更好的显示效果，十连抽的结果可以考虑分行或用更丰富的格式
+    #         # 但 _send_response 目前是基于简单文本或单张图片的
+    #         # 对于长文本，可以考虑是否需要换行处理
+    #         response_message = result["message"]
+    #         # 简单的换行处理，让结果更易读
+    #         if is_ten_pull and result.get("rewards"):
+    #             formatted_rewards = []
+    #             for reward in result["rewards"]:
+    #                 # 可以根据 reward['category'] 和 reward['data'] 来定制更详细的显示
+    #                 if reward['category'] == 'shengtong':
+    #                     st_data = reward['data']
+    #                     st_rank = st_data.get('rank', '未知品阶') # 从神通完整数据中获取品阶
+    #                     formatted_rewards.append(f"✨ 神通【{reward['name']}】({st_rank})")
+    #                 else: # 灵石
+    #                     formatted_rewards.append(f"💰 {reward['name']}")
+    #
+    #             header = response_message.split('\n')[0] # 保留第一行“恭喜道友...”
+    #             response_message = header + "\n" + "\n".join(formatted_rewards)
+    #             if "(十连保底已触发)" in result["message"]: # 把保底提示加回来
+    #                 response_message += "\n(十连保底已触发)"
+    #
+    #
+    #         async for r in self._send_response(event, response_message, f"{title_prefix} - {pool_config.get('name', '万法宝鉴')}", font_size=28):
+    #             yield r
+    #     else:
+    #         async for r in self._send_response(event, result["message"], f"{title_prefix}失败"):
+    #             yield r
 
-        pool_id = "wanfa_baojian" # 卡池内部ID
+    async def _handle_gacha_pull(self, event: AstrMessageEvent, pool_id: str, is_ten_pull: bool):
+        """统一处理单抽和十连抽的通用逻辑"""
         pool_config = self.xiu_config.gacha_pools_config.get(pool_id)
         if not pool_config:
-            async for r in self._send_response(event, "错误：万法宝鉴卡池配置未找到。"): yield r
+            async for r in self._send_response(event, f"错误：卡池 {pool_id} 配置未找到。"): yield r
             return
 
         user_id = event.get_sender_id()
@@ -5115,72 +5182,118 @@ class XiuxianPlugin(Star):
         if not is_user:
             async for r in self._send_response(event, msg_check): yield r
             return
-    
-        pool_id = "wanfa_baojian"
-    
-        # 调用 GachaManager 执行抽奖
-        # 注意：gacha_manager.perform_gacha 现在应该是一个同步方法，因为它不涉及异步IO
-        # 如果它是异步的，这里需要 await
-        # 根据我们之前的设计，GachaManager 的方法都是同步的
+
         try:
-            # 模拟一些处理时间，让用户感觉机器人正在“抽奖”
             processing_msg = "正在沟通天地，演算天机..." if not is_ten_pull else "大法力运转，十方天机尽在掌握..."
             async for r_wait in self._send_response(event, processing_msg, "请稍候"): yield r_wait
-            # await asyncio.sleep(random.uniform(1, 2.5)) # 实际机器人中避免不必要的sleep
-    
+
             result = self.gacha_manager.perform_gacha(user_id, pool_id, is_ten_pull)
         except Exception as e:
-            logger.error(f"万法宝鉴抽奖时发生严重错误: {e}", exc_info=True)
-            async for r in self._send_response(event, f"抽奖过程中发生未知异常，请联系管理员！错误: {type(e).__name__}"): yield r
+            logger.error(f"卡池 {pool_id} 抽奖时发生严重错误: {e}", exc_info=True)
+            async for r in self._send_response(event,
+                                               f"抽奖过程中发生未知异常，请联系管理员！错误: {type(e).__name__}"): yield r
             return
-    
+
         title_prefix = "十连结果" if is_ten_pull else "抽奖结果"
         if result["success"]:
-            # 刷新用户数据，因为灵石和物品发生了变化
-            self.XiuXianService.refresh_user_base_attributes(user_id) # 如果灵石影响属性
-            self.XiuXianService.update_power2(user_id) # 重新计算战力
-    
-            # 为了更好的显示效果，十连抽的结果可以考虑分行或用更丰富的格式
-            # 但 _send_response 目前是基于简单文本或单张图片的
-            # 对于长文本，可以考虑是否需要换行处理
+            self.XiuXianService.refresh_user_base_attributes(user_id)
+            self.XiuXianService.update_power2(user_id)
+
             response_message = result["message"]
-            # 简单的换行处理，让结果更易读
             if is_ten_pull and result.get("rewards"):
                 formatted_rewards = []
                 for reward in result["rewards"]:
-                    # 可以根据 reward['category'] 和 reward['data'] 来定制更详细的显示
-                    if reward['category'] == 'shengtong':
-                        st_data = reward['data']
-                        st_rank = st_data.get('rank', '未知品阶') # 从神通完整数据中获取品阶
-                        formatted_rewards.append(f"✨ 神通【{reward['name']}】({st_rank})")
-                    else: # 灵石
+                    item_data = reward['data']
+                    item_category = reward['category'].lower()
+                    category_display_name = {
+                           "shengtong": "神通",
+                           "faqi": "法器",
+                           "gongfa": "功法",
+                           "fangju": "防具",
+                           "lingshi": "灵石"  # 虽然灵石通常直接显示数量，但以防万一
+                    }.get(item_category, item_category.capitalize())  # 未知类别则首字母大写
+
+                    # 通用化显示，适用于神通、法器、功法、防具等
+                    if item_category in ['shengtong', 'faqi', 'gongfa', 'fangju']:
+                        # 功法/神通的品阶在 item_data['level'] (交换后)
+                        # 法器/防具的品阶在 item_data['level'] (json中的level字段，是字符串)
+                        # 或者统一使用 item_data['rank'] (json中的rank字段，是数字，越小越好)
+                        # 为了统一显示，我们优先用 item_data['level'] (字符串品阶)
+                        item_rank_display = item_data.get('level', '未知品阶')
+                        if item_category == 'shengtong':
+                            item_rank_display = item_data.get('rank', '未知品阶')
+
+                        formatted_rewards.append(
+                            f"✨{category_display_name}【{reward['name']}】({item_rank_display})")
+                    else:  # 灵石
                         formatted_rewards.append(f"💰 {reward['name']}")
-    
-                header = response_message.split('\n')[0] # 保留第一行“恭喜道友...”
+
+                header = response_message.split('\n')[0]
                 response_message = header + "\n" + "\n".join(formatted_rewards)
-                if "(十连保底已触发)" in result["message"]: # 把保底提示加回来
-                    response_message += "\n(十连保底已触发)"
-    
-    
-            async for r in self._send_response(event, response_message, f"{title_prefix} - {pool_config.get('name', '万法宝鉴')}", font_size=28):
+                # 保底提示已在 GachaManager 中加入 message
+                # if "(十连保底已触发" in result["message"]:
+                #     response_message += "\n(十连保底已触发)"
+
+            async for r in self._send_response(event, response_message,
+                                               f"{title_prefix} - {pool_config.get('name', '神秘宝库')}", font_size=28):
                 yield r
         else:
             async for r in self._send_response(event, result["message"], f"{title_prefix}失败"):
                 yield r
-    
+
     @filter.command("万法宝鉴单抽", alias={"神通单抽"})
     @command_lock
     async def gacha_wanfa_baojian_single(self, event: AstrMessageEvent):
-        """执行万法宝鉴单次抽取"""
-        async for response in self._handle_gacha_pull(event, is_ten_pull=False):
+        async for response in self._handle_gacha_pull(event, pool_id="wanfa_baojian", is_ten_pull=False):
             yield response
-    
+
     @filter.command("万法宝鉴十连", alias={"神通十连"})
     @command_lock
     async def gacha_wanfa_baojian_multi(self, event: AstrMessageEvent):
-        """执行万法宝鉴十连抽取"""
-        async for response in self._handle_gacha_pull(event, is_ten_pull=True):
+        async for response in self._handle_gacha_pull(event, pool_id="wanfa_baojian", is_ten_pull=True):
             yield response
+
+    # --- 新增：神兵宝库 (法器池) 指令 ---
+    @filter.command("神兵宝库", alias={"法器抽奖", "抽法器"})
+    @command_lock
+    async def gacha_shenbing_baoku_info(self, event: AstrMessageEvent):
+        """显示神兵宝库卡池信息及抽奖指令"""
+        await self._update_active_groups(event)
+        is_user, _, msg_check = check_user(self.XiuXianService, event.get_sender_id())
+        if not is_user:
+            async for r in self._send_response(event, msg_check): yield r
+            return
+
+        pool_id = "shenbing_baoku"
+        pool_config = self.xiu_config.gacha_pools_config.get(pool_id)
+        if not pool_config:
+            async for r in self._send_response(event, "错误：神兵宝库卡池配置未找到。"): yield r
+            return
+
+        help_msg = (
+            f"⚔️【{pool_config['name']}】⚔️\n"
+            f"此地汇聚天下神兵，等待有缘人前来获取！\n\n"
+            f"单次寻访：消耗 {pool_config['single_cost']} 灵石\n"
+            f"  - 指令：【神兵宝库单抽】\n"
+            f"十次寻访：消耗 {pool_config['multi_cost']} 灵石 (享九折优惠，且必得至少一件稀有法器！)\n"
+            f"  - 指令：【神兵宝库十连】"
+        )
+        async for r in self._send_response(event, help_msg.strip(), "神兵宝库指引"): yield r
+
+    @filter.command("神兵宝库单抽", alias={"法器单抽"})
+    @command_lock
+    async def gacha_shenbing_baoku_single(self, event: AstrMessageEvent):
+        """执行神兵宝库单次抽取"""
+        async for response in self._handle_gacha_pull(event, pool_id="shenbing_baoku", is_ten_pull=False):
+            yield response
+
+    @filter.command("神兵宝库十连", alias={"法器十连"})
+    @command_lock
+    async def gacha_shenbing_baoku_multi(self, event: AstrMessageEvent):
+        """执行神兵宝库十连抽取"""
+        async for response in self._handle_gacha_pull(event, pool_id="shenbing_baoku", is_ten_pull=True):
+            yield response
+    
 
     @filter.command("丹药商店", alias={"丹药坊"})
     @command_lock

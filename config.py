@@ -262,6 +262,31 @@ class XiuConfig:
                     "guaranteed_item_type": "shengtong", # 保底类型为神通
                     "replacement_priority": ["lingshi"] # 如果十连无神通，优先替换灵石类奖励
                 }
+            },
+            "shenbing_baoku": {
+                "name": "神兵宝库",
+                "single_cost": 15000,  # 法器池单抽价格
+                "multi_cost": 135000,  # 法器池十连价格 (9折)
+                "item_categories_rate": {
+                    "faqi": 0.1,  # 15% 概率获得法器
+                    "lingshi": 0.9  # 85% 概率获得灵石
+                },
+                # 法器的具体稀有度分布由 GachaManager 中的权重处理
+                "lingshi_rewards": [  # 灵石奖励池可以与万法宝鉴类似或单独配置
+                    {"amount_range": [500, 1000], "weight": 60},
+                    {"amount_range": [1001, 2500], "weight": 30},
+                    {"amount_range": [2501, 5000], "weight": 10}
+                ],
+                "ten_pull_guarantee": {
+                    "enabled": True,
+                    "guaranteed_item_type": "faqi",  # 保底类型为法器
+                    # 'rank' 在法器.json 中是整数，值越小越稀有。
+                    # 42 对应 "黄阶下品" 功法/神通的 origin_level，对于法器，
+                    # 我们需要看 法器.json 中 rank 的分布。
+                    # 假设 rank 42 对应 "上品符器" (或类似品阶)。
+                    "guaranteed_min_rank_value": 42,  # 至少保底获得 rank <= 42 的法器
+                    "replacement_priority": ["lingshi"]  # 优先替换灵石类奖励
+                }
             }
         }
         

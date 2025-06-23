@@ -12,9 +12,11 @@ class GachaManager:
         self.items_manager = items_manager # Items 实例
         self.xiu_config = xiu_config       # XiuConfig 实例
         self.all_shengtongs = self.items_manager.get_data_by_item_type(['神通'])
+        self.all_faqi = self.items_manager.get_data_by_item_type(['法器'])
         
         # 预处理神通数据，按类型和稀有度（level）分层，并计算权重
         self.prepared_shengtongs = self._prepare_shengtong_pool()
+        self.prepared_faqi = self._prepare_faqi_pool()
 
     def _get_shengtong_level_weight(self, level_value: int) -> int:
         """
@@ -112,13 +114,228 @@ class GachaManager:
                 return item
         return items_with_weights[-1] # 理论上不会执行到这里，除非浮点数精度问题
 
-    def _draw_single_item(self, pool_config: dict) -> dict:
+    def _get_faqi_rank_weight(self, rank_value: int) -> int:
+        """
+        根据法器的 rank 值（越小越稀有）返回其在抽奖池中的权重。
+        法器 ranks from 法器.json: 50 (common) down to 18 (rare).
+        权重分配策略：rank 值越小（越稀有），权重越低。
+        """
+        # 示例权重，您可以根据实际稀有度分布调整
+        if rank_value >= 48: return 100  # 例如：rank 50, 49, 48 (对应 "下品符器" 等级)
+        if rank_value >= 43: return 60  # 例如：rank 47-43 (对应 "上品符器" 等级)
+        if rank_value >= 37: return 30  # 例如：rank 42-37 (对应 "下品法器" 等级)
+        if rank_value >= 31: return 15  # 例如：rank 36-31 (对应 "上品法器" 等级)
+        if rank_value >= 28: return 8  # 例如：rank 30-28 (对应 "下品纯阳法器" 等级)
+        if rank_value >= 25: return 5  # 例如：rank 27-25 (对应 "上品纯阳法器"/"下品通天法器" 等级)
+        if rank_value >= 20: return 2  # 例如：rank 24-20 (对应 "上品通天法器"/"下品仙器" 等级)
+        if rank_value >= 18: return 1  # 例如：rank 18 (对应 "上品仙器" 等级)
+        logger.warning(f"法器的 rank 值 {rank_value} 超出预期范围 (18-50)，使用默认最低权重1。")
+        return 1  # 对于超出预期范围的rank，给予最低权重
+
+    def _prepare_faqi_pool(self) -> list:
+        """
+        加载并预处理法器数据，为每个法器计算抽奖权重。
+        法器的 'rank' 字段是整数，'level' 字段是品阶字符串。
+        """
+        prepared_faqi_list = []
+        if not self.all_faqi:
+            logger.warning("法器数据为空，神兵宝库可能无法正确抽取法器。")
+            return prepared_faqi_list
+
+        for faqi_id, faqi_data in self.all_faqi.items():
+            rank_val = faqi_data.get('rank')  # 这是整数 rank
+            if rank_val is None:
+                logger.warning(f"法器 {faqi_data.get('name', faqi_id)} 缺少 'rank' 字段，跳过。")
+                continue
+
+            try:
+                rank_int = int(rank_val)
+            except (ValueError, TypeError):
+                logger.warning(f"法器 {faqi_data.get('name', faqi_id)} 的 'rank' 值 '{rank_val}' 不是有效整数，跳过。")
+                continue
+
+            weight = self._get_faqi_rank_weight(rank_int)
+            item_entry = {
+                "id": faqi_id,
+                "name": faqi_data.get('name', f"未知法器{faqi_id}"),
+                "rank": rank_int,  # 存储整数 rank，用于保底判断
+                "weight": weight,
+                "data": faqi_data  # 存储完整的法器数据
+            }
+            prepared_faqi_list.append(item_entry)
+
+        # 按权重排序是可选的，但有助于调试或特定抽奖策略
+        prepared_faqi_list.sort(key=lambda x: x['weight'])
+        return prepared_faqi_list
+
+    # def _draw_single_item(self, pool_config: dict) -> dict:
+    #     """
+    #     执行一次单抽逻辑。
+    #     :param pool_config: 特定卡池的配置字典。
+    #     :return: 抽到的物品信息字典，包含 "category", "id", "name", "data" (原始物品数据)
+    #     """
+    #     # 1. 决定抽中的大类 (神通或灵石)
+    #     category_rates = pool_config['item_categories_rate']
+    #     rand_category = random.random()
+    #     cumulative_rate = 0
+    #     chosen_category = None
+    #     for category, rate in category_rates.items():
+    #         cumulative_rate += rate
+    #         if rand_category <= cumulative_rate:
+    #             chosen_category = category
+    #             break
+    #
+    #     if chosen_category == "shengtong":
+    #         # 2a. 如果抽中神通，再决定神通类型
+    #         shengtong_type_rates = pool_config['shengtong_type_rate']
+    #         rand_st_type = random.random()
+    #         cumulative_st_rate = 0
+    #         chosen_st_type_key = None
+    #         for st_type_key, rate in shengtong_type_rates.items():
+    #             cumulative_st_rate += rate
+    #             if rand_st_type <= cumulative_st_rate:
+    #                 chosen_st_type_key = st_type_key
+    #                 break
+    #
+    #         # 2b. 从对应类型和稀有度的神通池中抽取
+    #         if chosen_st_type_key and self.prepared_shengtongs.get(chosen_st_type_key):
+    #             shengtong_pool_for_type = self.prepared_shengtongs[chosen_st_type_key]
+    #             if shengtong_pool_for_type:
+    #                 chosen_shengtong = self._weighted_random_choice(shengtong_pool_for_type)
+    #                 if chosen_shengtong:
+    #                     return {
+    #                         "category": "shengtong",
+    #                         "id": chosen_shengtong['id'],
+    #                         "name": chosen_shengtong['name'],
+    #                         "data": chosen_shengtong['data'] # 返回完整的神通数据
+    #                     }
+    #         # 如果上面步骤失败（如池子为空），则降级为灵石
+    #         logger.warning(f"无法从神通池 {chosen_st_type_key} 中抽取神通，降级为灵石。")
+    #         chosen_category = "lingshi" # 确保降级
+    #
+    #     if chosen_category == "lingshi":
+    #         # 3. 如果抽中灵石，从灵石奖励池中抽取
+    #         lingshi_reward_pool = pool_config['lingshi_rewards']
+    #         chosen_lingshi_tier = self._weighted_random_choice(lingshi_reward_pool)
+    #         if chosen_lingshi_tier:
+    #             amount = random.randint(chosen_lingshi_tier['amount_range'][0], chosen_lingshi_tier['amount_range'][1])
+    #             return {
+    #                 "category": "lingshi",
+    #                 "id": "lingshi_reward", # 特殊ID
+    #                 "name": f"{amount}灵石",
+    #                 "data": {"amount": amount} # 存储具体数量
+    #             }
+    #
+    #     # 默认或降级情况：返回最低档灵石
+    #     logger.error("万法宝鉴抽奖逻辑出现意外，返回默认灵石奖励。")
+    #     min_lingshi_amount = pool_config['lingshi_rewards'][0]['amount_range'][0]
+    #     return {
+    #         "category": "lingshi", "id": "lingshi_reward", "name": f"{min_lingshi_amount}灵石", "data": {"amount": min_lingshi_amount}
+    #     }
+
+    # def perform_gacha(self, user_id: str, pool_id: str, is_ten_pull: bool = False) -> dict:
+    #     """
+    #     执行抽奖 (单抽或十连)。
+    #     :param user_id: 玩家ID
+    #     :param pool_id: 卡池ID (例如 "wanfa_baojian")
+    #     :param is_ten_pull: 是否是十连抽
+    #     :return: 结果字典 {"success": bool, "message": str, "rewards": list | None}
+    #     """
+    #     pool_config = self.xiu_config.gacha_pools_config.get(pool_id)
+    #     if not pool_config:
+    #         return {"success": False, "message": "无效的卡池ID。"}
+    #
+    #     cost = pool_config['multi_cost'] if is_ten_pull else pool_config['single_cost']
+    #
+    #     # 1. 检查灵石是否足够
+    #     user_info = self.service.get_user_message(user_id)
+    #     if not user_info or user_info.stone < cost:
+    #         return {"success": False, "message": f"灵石不足！本次抽取需要 {cost} 灵石。"}
+    #
+    #     # 2. 扣除灵石 (事务性操作，如果后续发放失败应回滚，但这里简化)
+    #     self.service.update_ls(user_id, cost, 2) # 2代表减少
+    #
+    #     # 3. 执行抽奖
+    #     num_pulls = 10 if is_ten_pull else 1
+    #     rewards_list = []
+    #     shengtong_obtained_in_ten_pull = False
+    #
+    #     for _ in range(num_pulls):
+    #         item = self._draw_single_item(pool_config)
+    #         rewards_list.append(item)
+    #         if item['category'] == "shengtong":
+    #             shengtong_obtained_in_ten_pull = True
+    #
+    #     # 4. 处理十连保底 (平滑替换版)
+    #     if is_ten_pull and pool_config['ten_pull_guarantee']['enabled'] and not shengtong_obtained_in_ten_pull:
+    #         logger.info(f"用户 {user_id} 十连抽未获得神通，触发保底机制。")
+    #         # 找到一个可以被替换的奖励（优先替换灵石）
+    #         replacement_candidate_index = -1
+    #         min_value_for_replacement = float('inf') # 用于找到价值最低的
+    #
+    #         for i, reward_item in enumerate(rewards_list):
+    #             if reward_item['category'] in pool_config['ten_pull_guarantee']['replacement_priority']:
+    #                 # 对于灵石，其"价值"就是其数量
+    #                 current_value = reward_item['data'].get('amount', float('inf')) if reward_item['category'] == 'lingshi' else float('inf')
+    #                 if current_value < min_value_for_replacement:
+    #                     min_value_for_replacement = current_value
+    #                     replacement_candidate_index = i
+    #
+    #         if replacement_candidate_index != -1:
+    #             # 从所有神通中（不限类型）按稀有度权重随机抽取一个作为保底
+    #             # 为了简单，我们这里直接从所有品阶的神通中抽取，但可以限定为较低品阶
+    #             all_st_for_guarantee = []
+    #             for st_type_list in self.prepared_shengtongs.values():
+    #                 all_st_for_guarantee.extend(st_type_list)
+    #
+    #             if all_st_for_guarantee:
+    #                 guaranteed_shengtong_info = self._weighted_random_choice(all_st_for_guarantee)
+    #                 if guaranteed_shengtong_info:
+    #                     guaranteed_item = {
+    #                         "category": "shengtong",
+    #                         "id": guaranteed_shengtong_info['id'],
+    #                         "name": guaranteed_shengtong_info['name'],
+    #                         "data": guaranteed_shengtong_info['data']
+    #                     }
+    #                     logger.info(f"保底替换：将第 {replacement_candidate_index+1} 个奖励替换为神通【{guaranteed_item['name']}】")
+    #                     rewards_list[replacement_candidate_index] = guaranteed_item
+    #                 else:
+    #                     logger.error("保底触发，但无法从神通池中抽取保底神通！")
+    #             else:
+    #                  logger.error("保底触发，但神通池为空！")
+    #         else:
+    #             logger.warning("十连保底触发，但找不到合适的非神通奖励进行替换（例如全是神通了）。")
+    #
+    #
+    #     # 5. 发放奖励到玩家背包/账户
+    #     final_rewards_summary = []
+    #     for reward_item in rewards_list:
+    #         final_rewards_summary.append(reward_item['name'])
+    #         if reward_item['category'] == "shengtong":
+    #             # 神通是物品，需要添加到背包
+    #             # 假设神通在items.json中定义，并且类型是"神通"
+    #             # item_manager.get_data_by_item_id(reward_item['id']) 会返回其详细信息
+    #             shengtong_data = reward_item['data'] # 已经包含了完整数据
+    #             self.service.add_item(user_id, int(reward_item['id']), shengtong_data.get('item_type', '神通'), 1)
+    #         elif reward_item['category'] == "lingshi":
+    #             # 灵石是直接增加到玩家账户 (注意：这里是增加抽到的灵石，不是消耗)
+    #             self.service.update_ls(user_id, reward_item['data']['amount'], 1) # 1代表增加
+    #
+    #     pull_type_msg = "十连召唤" if is_ten_pull else "召唤"
+    #     message = f"恭喜道友进行{pull_type_msg}，从【万法宝鉴】中获得：\n" + "\n".join([f"- {name}" for name in final_rewards_summary])
+    #     if is_ten_pull and pool_config['ten_pull_guarantee']['enabled'] and not shengtong_obtained_in_ten_pull and replacement_candidate_index != -1:
+    #          message += "\n(十连保底已触发)"
+    #
+    #
+    #     return {"success": True, "message": message, "rewards": rewards_list}
+
+    def _draw_single_item(self, pool_config: dict, pool_id: str) -> dict:  # 添加 pool_id 参数
         """
         执行一次单抽逻辑。
         :param pool_config: 特定卡池的配置字典。
+        :param pool_id: 当前卡池的ID (e.g., "wanfa_baojian", "shenbing_baoku")
         :return: 抽到的物品信息字典，包含 "category", "id", "name", "data" (原始物品数据)
         """
-        # 1. 决定抽中的大类 (神通或灵石)
         category_rates = pool_config['item_categories_rate']
         rand_category = random.random()
         cumulative_rate = 0
@@ -129,146 +346,168 @@ class GachaManager:
                 chosen_category = category
                 break
 
-        if chosen_category == "shengtong":
-            # 2a. 如果抽中神通，再决定神通类型
-            shengtong_type_rates = pool_config['shengtong_type_rate']
-            rand_st_type = random.random()
-            cumulative_st_rate = 0
-            chosen_st_type_key = None
-            for st_type_key, rate in shengtong_type_rates.items():
-                cumulative_st_rate += rate
-                if rand_st_type <= cumulative_st_rate:
-                    chosen_st_type_key = st_type_key
-                    break
+        main_item_type_for_pool = pool_config['ten_pull_guarantee']['guaranteed_item_type']
+        item_to_return = None
 
-            # 2b. 从对应类型和稀有度的神通池中抽取
-            if chosen_st_type_key and self.prepared_shengtongs.get(chosen_st_type_key):
-                shengtong_pool_for_type = self.prepared_shengtongs[chosen_st_type_key]
-                if shengtong_pool_for_type:
-                    chosen_shengtong = self._weighted_random_choice(shengtong_pool_for_type)
-                    if chosen_shengtong:
-                        return {
-                            "category": "shengtong",
-                            "id": chosen_shengtong['id'],
-                            "name": chosen_shengtong['name'],
-                            "data": chosen_shengtong['data'] # 返回完整的神通数据
+        if chosen_category == main_item_type_for_pool:
+            if pool_id == "wanfa_baojian" and main_item_type_for_pool == "shengtong":
+                shengtong_type_rates = pool_config['shengtong_type_rate']
+                rand_st_type = random.random()
+                cumulative_st_rate = 0
+                chosen_st_type_key = None
+                for st_type_key, rate in shengtong_type_rates.items():
+                    cumulative_st_rate += rate
+                    if rand_st_type <= cumulative_st_rate:
+                        chosen_st_type_key = st_type_key
+                        break
+                if chosen_st_type_key and self.prepared_shengtongs.get(chosen_st_type_key):
+                    shengtong_pool_for_type = self.prepared_shengtongs[chosen_st_type_key]
+                    if shengtong_pool_for_type:
+                        chosen_shengtong = self._weighted_random_choice(shengtong_pool_for_type)
+                        if chosen_shengtong:
+                            item_to_return = {
+                                "category": "shengtong",  # 确保 category 与 main_item_type_for_pool 一致
+                                "id": chosen_shengtong['id'],
+                                "name": chosen_shengtong['name'],
+                                "data": chosen_shengtong['data']
+                            }
+                if not item_to_return:  # 如果神通抽取失败
+                    logger.warning(f"无法从神通池 {chosen_st_type_key} 中抽取神通，降级为灵石。")
+                    chosen_category = "lingshi"  # 强制降级
+
+            elif pool_id == "shenbing_baoku" and main_item_type_for_pool == "faqi":  # 新增法器池逻辑
+                if self.prepared_faqi:
+                    chosen_faqi = self._weighted_random_choice(self.prepared_faqi)
+                    if chosen_faqi:
+                        item_to_return = {
+                            "category": "faqi",  # 确保 category 与 main_item_type_for_pool 一致
+                            "id": chosen_faqi['id'],
+                            "name": chosen_faqi['name'],
+                            "data": chosen_faqi['data']
                         }
-            # 如果上面步骤失败（如池子为空），则降级为灵石
-            logger.warning(f"无法从神通池 {chosen_st_type_key} 中抽取神通，降级为灵石。")
-            chosen_category = "lingshi" # 确保降级
+                if not item_to_return:  # 如果法器抽取失败
+                    logger.warning(f"无法从法器池中抽取法器，降级为灵石。")
+                    chosen_category = "lingshi"  # 强制降级
 
+            # --- 在这里为后续的功法池、防具池添加 elif ---
+
+            if item_to_return:
+                return item_to_return
+
+        # 如果抽中的是灵石，或者主要物品抽取失败后降级为灵石
         if chosen_category == "lingshi":
-            # 3. 如果抽中灵石，从灵石奖励池中抽取
             lingshi_reward_pool = pool_config['lingshi_rewards']
             chosen_lingshi_tier = self._weighted_random_choice(lingshi_reward_pool)
             if chosen_lingshi_tier:
                 amount = random.randint(chosen_lingshi_tier['amount_range'][0], chosen_lingshi_tier['amount_range'][1])
                 return {
                     "category": "lingshi",
-                    "id": "lingshi_reward", # 特殊ID
+                    "id": "lingshi_reward",
                     "name": f"{amount}灵石",
-                    "data": {"amount": amount} # 存储具体数量
+                    "data": {"amount": amount}
                 }
 
-        # 默认或降级情况：返回最低档灵石
-        logger.error("万法宝鉴抽奖逻辑出现意外，返回默认灵石奖励。")
-        min_lingshi_amount = pool_config['lingshi_rewards'][0]['amount_range'][0]
+        # 最终的降级/默认情况
+        logger.error(f"卡池 {pool_id} 抽奖逻辑出现意外或多次降级，返回默认最低灵石奖励。")
+        min_lingshi_amount = pool_config['lingshi_rewards'][0]['amount_range'][0]  # 取配置中最低档灵石的最小值
         return {
-            "category": "lingshi", "id": "lingshi_reward", "name": f"{min_lingshi_amount}灵石", "data": {"amount": min_lingshi_amount}
+            "category": "lingshi", "id": "lingshi_reward", "name": f"{min_lingshi_amount}灵石",
+            "data": {"amount": min_lingshi_amount}
         }
 
     def perform_gacha(self, user_id: str, pool_id: str, is_ten_pull: bool = False) -> dict:
-        """
-        执行抽奖 (单抽或十连)。
-        :param user_id: 玩家ID
-        :param pool_id: 卡池ID (例如 "wanfa_baojian")
-        :param is_ten_pull: 是否是十连抽
-        :return: 结果字典 {"success": bool, "message": str, "rewards": list | None}
-        """
         pool_config = self.xiu_config.gacha_pools_config.get(pool_id)
         if not pool_config:
             return {"success": False, "message": "无效的卡池ID。"}
 
         cost = pool_config['multi_cost'] if is_ten_pull else pool_config['single_cost']
-
-        # 1. 检查灵石是否足够
         user_info = self.service.get_user_message(user_id)
         if not user_info or user_info.stone < cost:
             return {"success": False, "message": f"灵石不足！本次抽取需要 {cost} 灵石。"}
 
-        # 2. 扣除灵石 (事务性操作，如果后续发放失败应回滚，但这里简化)
-        self.service.update_ls(user_id, cost, 2) # 2代表减少
+        self.service.update_ls(user_id, cost, 2)
 
-        # 3. 执行抽奖
         num_pulls = 10 if is_ten_pull else 1
         rewards_list = []
-        shengtong_obtained_in_ten_pull = False
+        # 修改：shengtong_obtained_in_ten_pull -> obtained_guaranteed_type_in_ten_pull
+        obtained_guaranteed_type_in_ten_pull = False
+        guaranteed_item_type_for_this_pool = pool_config['ten_pull_guarantee']['guaranteed_item_type']
 
         for _ in range(num_pulls):
-            item = self._draw_single_item(pool_config)
+            item = self._draw_single_item(pool_config, pool_id)  # 传递 pool_id
             rewards_list.append(item)
-            if item['category'] == "shengtong":
-                shengtong_obtained_in_ten_pull = True
+            if item['category'] == guaranteed_item_type_for_this_pool:  # 检查是否抽到了该池的保底类型
+                obtained_guaranteed_type_in_ten_pull = True
 
-        # 4. 处理十连保底 (平滑替换版)
-        if is_ten_pull and pool_config['ten_pull_guarantee']['enabled'] and not shengtong_obtained_in_ten_pull:
-            logger.info(f"用户 {user_id} 十连抽未获得神通，触发保底机制。")
-            # 找到一个可以被替换的奖励（优先替换灵石）
+        # 处理十连保底
+        if is_ten_pull and pool_config['ten_pull_guarantee']['enabled'] and not obtained_guaranteed_type_in_ten_pull:
+            logger.info(
+                f"用户 {user_id} 在卡池 {pool_id} 十连抽未获得类型为 {guaranteed_item_type_for_this_pool} 的物品，触发保底。")
+
             replacement_candidate_index = -1
-            min_value_for_replacement = float('inf') # 用于找到价值最低的
-
+            min_value_for_replacement = float('inf')
             for i, reward_item in enumerate(rewards_list):
                 if reward_item['category'] in pool_config['ten_pull_guarantee']['replacement_priority']:
-                    # 对于灵石，其"价值"就是其数量
-                    current_value = reward_item['data'].get('amount', float('inf')) if reward_item['category'] == 'lingshi' else float('inf')
+                    current_value = reward_item['data'].get('amount', float('inf')) if reward_item[
+                                                                                           'category'] == 'lingshi' else float(
+                        'inf')
                     if current_value < min_value_for_replacement:
                         min_value_for_replacement = current_value
                         replacement_candidate_index = i
 
             if replacement_candidate_index != -1:
-                # 从所有神通中（不限类型）按稀有度权重随机抽取一个作为保底
-                # 为了简单，我们这里直接从所有品阶的神通中抽取，但可以限定为较低品阶
-                all_st_for_guarantee = []
-                for st_type_list in self.prepared_shengtongs.values():
-                    all_st_for_guarantee.extend(st_type_list)
+                guaranteed_item_pool_for_selection = []
+                min_rank_or_level_for_guarantee = pool_config['ten_pull_guarantee'].get('guaranteed_min_rank_value',
+                                                                                        99)  # 默认一个很高的值
 
-                if all_st_for_guarantee:
-                    guaranteed_shengtong_info = self._weighted_random_choice(all_st_for_guarantee)
-                    if guaranteed_shengtong_info:
-                        guaranteed_item = {
-                            "category": "shengtong",
-                            "id": guaranteed_shengtong_info['id'],
-                            "name": guaranteed_shengtong_info['name'],
-                            "data": guaranteed_shengtong_info['data']
+                if pool_id == "wanfa_baojian" and guaranteed_item_type_for_this_pool == "shengtong":
+                    # 神通的保底是任意神通，不按稀有度筛选（或按需调整）
+                    for st_type_list in self.prepared_shengtongs.values():
+                        guaranteed_item_pool_for_selection.extend(st_type_list)
+                elif pool_id == "shenbing_baoku" and guaranteed_item_type_for_this_pool == "faqi":
+                    # 法器保底，筛选 rank <= guaranteed_min_rank_value
+                    guaranteed_item_pool_for_selection = [
+                        item for item in self.prepared_faqi if item['rank'] <= min_rank_or_level_for_guarantee
+                    ]
+                # --- 在这里为后续的功法池、防具池添加 elif ---
+
+                if guaranteed_item_pool_for_selection:
+                    chosen_guaranteed_item_info = self._weighted_random_choice(guaranteed_item_pool_for_selection)
+                    if chosen_guaranteed_item_info:
+                        guaranteed_item_to_add = {
+                            "category": guaranteed_item_type_for_this_pool,
+                            "id": chosen_guaranteed_item_info['id'],
+                            "name": chosen_guaranteed_item_info['name'],
+                            "data": chosen_guaranteed_item_info['data']
                         }
-                        logger.info(f"保底替换：将第 {replacement_candidate_index+1} 个奖励替换为神通【{guaranteed_item['name']}】")
-                        rewards_list[replacement_candidate_index] = guaranteed_item
+                        logger.info(
+                            f"保底替换：将第 {replacement_candidate_index + 1} 个奖励替换为 {guaranteed_item_type_for_this_pool}【{guaranteed_item_to_add['name']}】")
+                        rewards_list[replacement_candidate_index] = guaranteed_item_to_add
                     else:
-                        logger.error("保底触发，但无法从神通池中抽取保底神通！")
+                        logger.error(f"保底触发，但无法从 {guaranteed_item_type_for_this_pool} 池中抽取保底物品！")
                 else:
-                     logger.error("保底触发，但神通池为空！")
+                    logger.error(f"保底触发，但 {guaranteed_item_type_for_this_pool} 池为空或不满足保底稀有度！")
             else:
-                logger.warning("十连保底触发，但找不到合适的非神通奖励进行替换（例如全是神通了）。")
+                logger.warning(f"十连保底触发，但找不到合适的非 {guaranteed_item_type_for_this_pool} 奖励进行替换。")
 
-
-        # 5. 发放奖励到玩家背包/账户
+        # 发放奖励
         final_rewards_summary = []
         for reward_item in rewards_list:
             final_rewards_summary.append(reward_item['name'])
-            if reward_item['category'] == "shengtong":
-                # 神通是物品，需要添加到背包
-                # 假设神通在items.json中定义，并且类型是"神通"
-                # item_manager.get_data_by_item_id(reward_item['id']) 会返回其详细信息
-                shengtong_data = reward_item['data'] # 已经包含了完整数据
-                self.service.add_item(user_id, int(reward_item['id']), shengtong_data.get('item_type', '神通'), 1)
+            if reward_item['category'] in ["shengtong", "faqi"]:  # 扩展到法器
+                item_data = reward_item['data']
+                actual_item_type = item_data.get('item_type', '未知')  # "神通" 或 "法器"
+                self.service.add_item(user_id, int(reward_item['id']), actual_item_type, 1)
             elif reward_item['category'] == "lingshi":
-                # 灵石是直接增加到玩家账户 (注意：这里是增加抽到的灵石，不是消耗)
-                self.service.update_ls(user_id, reward_item['data']['amount'], 1) # 1代表增加
+                self.service.update_ls(user_id, reward_item['data']['amount'], 1)
 
-        pull_type_msg = "十连召唤" if is_ten_pull else "召唤"
-        message = f"恭喜道友进行{pull_type_msg}，从【万法宝鉴】中获得：\n" + "\n".join([f"- {name}" for name in final_rewards_summary])
-        if is_ten_pull and pool_config['ten_pull_guarantee']['enabled'] and not shengtong_obtained_in_ten_pull and replacement_candidate_index != -1:
-             message += "\n(十连保底已触发)"
+        pull_type_msg = "十连寻访" if is_ten_pull else "寻访"
+        message = f"恭喜道友进行{pull_type_msg}，从【{pool_config.get('name', '神秘宝库')}】中获得：\n" + "\n".join(
+            [f"- {name}" for name in final_rewards_summary])
 
+        # 调整保底提示的触发条件
+        if is_ten_pull and pool_config['ten_pull_guarantee'][
+            'enabled'] and not obtained_guaranteed_type_in_ten_pull and replacement_candidate_index != -1:
+            message += f"\n(十连保底已触发，获得{guaranteed_item_type_for_this_pool}!)"
 
         return {"success": True, "message": message, "rewards": rewards_list}
