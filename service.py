@@ -741,25 +741,30 @@ class XiuxianService:
 
         # 检查是否已穿戴同类型装备
         buff_info = self.get_user_buff_info(user_id)
-        slot_occupied = False
+        old_item_id_to_unequip = 0
+        slot_to_update = ""
+        item_type_for_add_back = item_type
         if item_type == "法器" and buff_info.fabao_weapon != 0:
-            slot_occupied = True
+            old_item_id_to_unequip = buff_info.fabao_weapon
+            slot_to_update = "fabao_weapon"
         elif item_type == "防具" and buff_info.armor_buff != 0:
-            slot_occupied = True
+            old_item_id_to_unequip = buff_info.armor_buff
+            slot_to_update = "armor_buff"
+        else:
+            slot_to_update = "fabao_weapon" if item_type == "法器" else "armor_buff"
 
-        if slot_occupied:
-            return {"success": False, "message": f"道友已经穿戴着{item_type}了，请先卸下再穿！"}
+        unequip_message_part = ""
+        if old_item_id_to_unequip != 0:
+            # 自动卸下旧装备
+            old_item_info = self.items.get_data_by_item_id(old_item_id_to_unequip)
+            self.add_item(user_id, old_item_id_to_unequip, item_type_for_add_back, 1)  # 将旧物品添加回背包
+            unequip_message_part = f"已自动卸下【{old_item_info['name']}】。\n"
 
         # 扣除背包物品并更新Buff表
         if not self.remove_item(user_id, item_info['name'], 1):
             return {"success": False, "message": f"背包中没有{item_info['name']}！"}
 
         cur = self.conn.cursor()
-        if item_type == "法器":
-            slot_to_update = "fabao_weapon"
-        elif item_type == "防具":
-            slot_to_update = "armor_buff"
-        # 使用参数化查询防止SQL注入
         cur.execute(f"UPDATE BuffInfo SET {slot_to_update} = ? WHERE user_id = ?", (item_id, user_id))
         
         # 确保 BuffInfo 表中确实有该用户的记录，如果没有（极少情况），插入一条
@@ -774,7 +779,9 @@ class XiuxianService:
             cur.execute(f"UPDATE BuffInfo SET {slot_to_update} = ? WHERE user_id = ?", (item_id, user_id))
         self.conn.commit()
 
-        return {"success": True, "message": f"成功穿戴 {item_info['name']}！"}
+        # return {"success": True, "message": f"成功穿戴 {item_info['name']}！"}
+
+        return {"success": True, "message": f"{unequip_message_part}成功穿戴【{item_info['name']}】！"}
 
     def unequip_item(self, user_id: str, item_type_str: str) -> dict:
         """为用户卸下装备"""
@@ -1077,27 +1084,27 @@ class XiuxianService:
 # === 在 service.py 末尾追加功法系统相关方法 ===
 # ==================================
 
-    def set_user_buff(self, user_id: str, buff_type: str, item_id: int) -> bool:
-        """
-        通用方法：为用户装备或卸下功法/神通
-        :param user_id: 用户ID
-        :param buff_type: 'main_buff' 或 'sec_buff' 或 'sub_buff'
-        :param item_id: 物品ID, 传 0 代表卸下
-        """
-        valid_buff_types = ['main_buff', 'sec_buff', 'sub_buff']
-        if buff_type not in valid_buff_types:
-            logger.error(f"无效的Buff类型: {buff_type}")
-            return False
-
-        try:
-            cur = self.conn.cursor()
-            # 使用 f-string 来动态构建列名，确保 buff_type 来自受信任的来源（我们自己的代码）
-            cur.execute(f"UPDATE BuffInfo SET {buff_type} = ? WHERE user_id = ?", (item_id, user_id))
-            self.conn.commit()
-            return True
-        except Exception as e:
-            logger.error(f"更新Buff失败: {e}")
-            return False
+    # def set_user_buff(self, user_id: str, buff_type: str, item_id: int) -> bool:
+    #     """
+    #     通用方法：为用户装备或卸下功法/神通
+    #     :param user_id: 用户ID
+    #     :param buff_type: 'main_buff' 或 'sec_buff' 或 'sub_buff'
+    #     :param item_id: 物品ID, 传 0 代表卸下
+    #     """
+    #     valid_buff_types = ['main_buff', 'sec_buff', 'sub_buff']
+    #     if buff_type not in valid_buff_types:
+    #         logger.error(f"无效的Buff类型: {buff_type}")
+    #         return False
+    #
+    #     try:
+    #         cur = self.conn.cursor()
+    #         # 使用 f-string 来动态构建列名，确保 buff_type 来自受信任的来源（我们自己的代码）
+    #         cur.execute(f"UPDATE BuffInfo SET {buff_type} = ? WHERE user_id = ?", (item_id, user_id))
+    #         self.conn.commit()
+    #         return True
+    #     except Exception as e:
+    #         logger.error(f"更新Buff失败: {e}")
+    #         return False
 
     def remake_user_root(self, user_id: str) -> dict:
         """
@@ -1663,7 +1670,7 @@ class XiuxianService:
         stone_reward = self.xiu_config.boss_config['Boss灵石'].get(boss_level, 1000)
         exp_reward = int(player_base_exp * 0.1) # 奖励为该境界玩家升级所需经验的10%
 
-        boss_name = f"肆虐的{random.choice(self.xiu_config.boss_config['Boss名字'])}"
+        boss_name = f"肆虐的【{random.choice(self.xiu_config.boss_config['Boss名字'])}】"
 
         return {
             "user_id": f"BOSS_{boss_name[:5]}_{int(time.time())}", # 特殊ID
@@ -2773,3 +2780,45 @@ class XiuxianService:
             messages.append(summary_msg)
 
         return successful_mortgages, total_loan_received, messages
+
+    def smart_equip_gongfa_or_skill(self, user_id: str, new_item_id: int, item_actual_type: str) -> tuple[bool, str]:
+        """
+        智能装备功法或神通，自动处理旧物品的卸下和返还。
+        :param user_id: 用户ID
+        :param new_item_id: 要装备的新物品的ID
+        :param item_actual_type: 新物品的真实类型 ("功法", "辅修功法", "神通")
+        :return: (success: bool, message: str)
+        """
+        buff_info = self.get_user_buff_info(user_id)
+        if not buff_info: # 理论上不应该发生，因为注册时会创建
+            return False, "错误：无法获取您的功法槽信息。"
+
+        slot_to_update = None
+        old_item_id_in_slot = 0
+        old_item_type_for_add_back = None # 用于将旧物品添加回背包的类型
+
+        if item_actual_type == "功法": # 主修功法
+            slot_to_update = "main_buff"
+            old_item_id_in_slot = buff_info.main_buff
+            old_item_type_for_add_back = "功法"
+        elif item_actual_type == "辅修功法":
+            slot_to_update = "sub_buff"
+            old_item_id_in_slot = buff_info.sub_buff
+            old_item_type_for_add_back = "辅修功法"
+        elif item_actual_type == "神通":
+            slot_to_update = "sec_buff"
+            old_item_id_in_slot = buff_info.sec_buff
+            old_item_type_for_add_back = "神通"
+        else:
+            return False, "错误的物品类型，无法装备。"
+
+        unequip_message_part = ""
+        if old_item_id_in_slot != 0:
+            old_item_info = self.items.get_data_by_item_id(old_item_id_in_slot)
+            self.add_item(user_id, old_item_id_in_slot, old_item_type_for_add_back, 1)
+            unequip_message_part = f"已自动卸下【{old_item_info['name']}】。\n"
+
+        # 更新BuffInfo表中的槽位为新物品ID
+        self.set_user_buff(user_id, slot_to_update, new_item_id) # set_user_buff(..., is_additive=False)
+        new_item_info = self.items.get_data_by_item_id(new_item_id)
+        return True, f"{unequip_message_part}成功装备【{new_item_info['name']}】！"

@@ -209,7 +209,7 @@ class XianScheduler:
         except Exception as e:
             logger.error(f"向群  广播消息失败: {e}")
 
-    async def _broadcast_to_groups(self, msg: str, title: str = "公告"):
+    async def _broadcast_to_groups(self, msg: str, title: str = "公告", extra_pic_filename: str = None):
         """向所有活跃群组广播消息"""
         if not hasattr(self.plugin_instance, 'groups') or not self.plugin_instance.groups:
             return
@@ -221,7 +221,10 @@ class XianScheduler:
             try:
                 if self.plugin_instance.xiu_config.img:
                     pic = await get_msg_pic(msg, title)
-                    message_chain = MessageChain([Image.fromFileSystem(str(pic))])
+                    if extra_pic_filename:
+                        message_chain = MessageChain([Image.fromFileSystem(str(pic)), Image.fromFileSystem(str(extra_pic_filename))])
+                    else:
+                        message_chain = MessageChain([Image.fromFileSystem(str(pic))])
                 else:
                     message_chain = MessageChain(msg)
 
@@ -328,9 +331,16 @@ class XianScheduler:
             if hasattr(self.plugin_instance, 'groups') and self.plugin_instance.groups:
                 # 使用内存中（刚从数据库同步的）BOSS信息来构建消息
                 current_boss_for_broadcast = self.plugin_instance.world_boss
-                msg_broadcast = f"警报！{current_boss_for_broadcast['jj']}境界的【{current_boss_for_broadcast['name']}】已降临仙界，请各位道友速去讨伐！\n(HP: {current_boss_for_broadcast['hp']}, ATK: {current_boss_for_broadcast['atk']})"
+                msg_broadcast = f"警报！{current_boss_for_broadcast['jj']}境界的{current_boss_for_broadcast['name']}已降临仙界，请各位道友速去讨伐！\n(HP: {current_boss_for_broadcast['hp']}, ATK: {current_boss_for_broadcast['atk']})"
+                import re
+                match = re.search(r'【(.*?)】', current_boss_for_broadcast['name'])
+                if match:
+                    # print(match.group(1))  # 输出: 婴鲤兽
+                    import os
+                    origin_name = match.group(1)
+                    filepath = os.path.join(self.plugin_instance.data_dir, 'boss', f"{origin_name}.png")
 
-                await self._broadcast_to_groups(msg_broadcast, "世界BOSS降临") # 调用你已有的广播方法
+                await self._broadcast_to_groups(msg_broadcast, "世界BOSS降临", filepath) # 调用你已有的广播方法
                 logger.info(f"已向 {len(self.plugin_instance.groups)} 个群组广播了BOSS降临消息。")
             else:
                 logger.info("没有配置活跃群组，BOSS生成消息未广播。")

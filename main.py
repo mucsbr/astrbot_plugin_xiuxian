@@ -604,6 +604,8 @@ class XiuxianPlugin(Star):
             return
 
         result = self.XiuXianService.equip_item(user_id, item_in_backpack.goods_id)
+        if result["success"]:
+            self.XiuXianService.update_power2(user_id)  # 更新战力等
         yield event.chain_result([Comp.Image.fromFileSystem(str(await get_msg_pic(await pic_msg_format(result["message"], event))))])
 
     @filter.command("卸下")
@@ -2062,37 +2064,52 @@ class XiuxianPlugin(Star):
         item_info = self.XiuXianService.items.get_data_by_item_id(item_in_backpack.goods_id)
         item_type = item_info.get("item_type")
 
-        buff_info = self.XiuXianService.get_user_buff_info(user_id)
-        buff_type_to_set = None
-
-        if item_type == "功法":
-            if buff_info.main_buff != 0:
-                msg = "道友已装备了主修功法，请先卸下！"
-                yield event.chain_result([Comp.Image.fromFileSystem(str(await get_msg_pic(await pic_msg_format(msg, event))))])
-                return
-            buff_type_to_set = 'main_buff'
-        elif item_type == "辅修功法":
-            if buff_info.sub_buff != 0:
-                msg = "道友已装备了辅修功法，请先卸下！"
-                yield event.chain_result([Comp.Image.fromFileSystem(str(await get_msg_pic(await pic_msg_format(msg, event))))])
-                return
-            buff_type_to_set = 'sub_buff'
-        elif item_type == "神通": # <<< 新增对神通的处理
-            if buff_info.sec_buff != 0: # 检查神通槽位 (sec_buff)
-                msg = "道友已装备了神通，请先卸下！"
-                yield event.chain_result([Comp.Image.fromFileSystem(str(await get_msg_pic(await pic_msg_format(msg, event))))])
-                return
-            buff_type_to_set = 'sec_buff' # 告诉 service 更新 sec_buff 字段
-        else:
-            msg = f"【{exercise_name}】似乎不是可以装备的功法秘籍。"
-            yield event.chain_result([Comp.Image.fromFileSystem(str(await get_msg_pic(await pic_msg_format(msg, event))))])
+        # buff_info = self.XiuXianService.get_user_buff_info(user_id)
+        # buff_type_to_set = None
+        #
+        # if item_type == "功法":
+        #     if buff_info.main_buff != 0:
+        #         msg = "道友已装备了主修功法，请先卸下！"
+        #         yield event.chain_result([Comp.Image.fromFileSystem(str(await get_msg_pic(await pic_msg_format(msg, event))))])
+        #         return
+        #     buff_type_to_set = 'main_buff'
+        # elif item_type == "辅修功法":
+        #     if buff_info.sub_buff != 0:
+        #         msg = "道友已装备了辅修功法，请先卸下！"
+        #         yield event.chain_result([Comp.Image.fromFileSystem(str(await get_msg_pic(await pic_msg_format(msg, event))))])
+        #         return
+        #     buff_type_to_set = 'sub_buff'
+        # elif item_type == "神通": # <<< 新增对神通的处理
+        #     if buff_info.sec_buff != 0: # 检查神通槽位 (sec_buff)
+        #         msg = "道友已装备了神通，请先卸下！"
+        #         yield event.chain_result([Comp.Image.fromFileSystem(str(await get_msg_pic(await pic_msg_format(msg, event))))])
+        #         return
+        #     buff_type_to_set = 'sec_buff' # 告诉 service 更新 sec_buff 字段
+        # else:
+        #     msg = f"【{exercise_name}】似乎不是可以装备的功法秘籍。"
+        #     yield event.chain_result([Comp.Image.fromFileSystem(str(await get_msg_pic(await pic_msg_format(msg, event))))])
+        #     return
+        allowed_skill_types = ["功法", "辅修功法", "神通"]
+        if item_type not in allowed_skill_types:
+            msg = f"【{exercise_name}】似乎不是可以装备的功法秘籍或神通。"
+            async for r in self._send_response(event, msg): yield r
             return
 
-        self.XiuXianService.remove_item(user_id, item_info["name"])
+        # self.XiuXianService.remove_item(user_id, item_info["name"])
         # 执行装备
-        self.XiuXianService.set_user_buff(user_id, buff_type_to_set, item_in_backpack.goods_id)
-        msg = f"道友已成功装备功法【{exercise_name}】！"
-        yield event.chain_result([Comp.Image.fromFileSystem(str(await get_msg_pic(await pic_msg_format(msg, event))))])
+        # self.XiuXianService.set_user_buff(user_id, buff_type_to_set, item_in_backpack.goods_id, 1)
+        if not self.XiuXianService.remove_item(user_id, item_info["name"], 1):
+            msg = f"错误：从背包移除【{exercise_name}】失败！"
+            async for r in self._send_response(event, msg): yield r
+            return
+        success, message = self.XiuXianService.smart_equip_gongfa_or_skill(user_id, item_in_backpack.goods_id,
+                                                                           item_type)
+        if success:
+            self.XiuXianService.update_power2(user_id)  # 更新战力等
+
+        async for r in self._send_response(event, message): yield r
+        # msg = f"道友已成功装备功法【{exercise_name}】！"
+        # yield event.chain_result([Comp.Image.fromFileSystem(str(await get_msg_pic(await pic_msg_format(msg, event))))])
 
     @filter.command("卸下功法", alias={"卸载功法"})
     @command_lock
