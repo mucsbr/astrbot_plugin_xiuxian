@@ -2491,19 +2491,19 @@ class XiuxianService:
             rank_val = item_data_dict.get('rank')
             if rank_val is None: return 0
             item_weight = items_manager._get_faqi_rank_weight(int(rank_val))  # 调用 Items 类的方法
-            total_category_weight = items_manager.total_weight_faqi / 2  # 从 Items 实例获取
+            total_category_weight = items_manager.total_weight_faqi / 4  # 从 Items 实例获取
         elif item_type == "功法" or item_type == "辅修功法": # 主修功法
             pool_id = "wanggu_gongfa_ge"
             origin_level_val = item_data_dict.get('origin_level')
             if origin_level_val is None: return 0
             item_weight = items_manager._get_gongfa_origin_level_weight(int(origin_level_val))  # 调用 Items 类的方法
-            total_category_weight = items_manager.total_weight_gongfa  # 从 Items 实例获取
+            total_category_weight = items_manager.total_weight_gongfa / 20  # 从 Items 实例获取
         elif item_type == "防具":
             pool_id = "xuanjia_baodian"
             rank_val = item_data_dict.get('rank')
             if rank_val is None: return 0
             item_weight = items_manager._get_fangju_rank_weight(int(rank_val))  # 调用 Items 类的方法
-            total_category_weight = items_manager.total_weight_fangju  # 从 Items 实例获取
+            total_category_weight = items_manager.total_weight_fangju / 2 # 从 Items 实例获取
         elif item_type == "神通":
             pool_id = "wanfa_baojian"
             origin_level_val = item_data_dict.get('origin_level')
@@ -2533,7 +2533,7 @@ class XiuxianService:
 
             # 神通的 P(item_i_within_main_category) 需要额外乘以其子类别的选中概率
             # P(item_i_within_shengtong_pool) = P(type_X) * (Weight(item_i) / TotalWeight(type_X_items))
-            main_item_rate_from_pool = main_item_rate_from_pool * prob_of_this_st_type
+            main_item_rate_from_pool = main_item_rate_from_pool * prob_of_this_st_type * 10
         else:
             return 0 # 不可抵押的类型
 
