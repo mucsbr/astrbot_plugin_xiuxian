@@ -206,12 +206,12 @@ class XiuxianPlugin(Star):
             logger.error(f"解析 @ 用户失败: {e}")
         return None
 
-    async def _send_response(self, event: AstrMessageEvent, msg: str, title: str = ' ', font_size: int = 40):
+    async def _send_response(self, event: AstrMessageEvent, msg: str, title: str = ' ', font_size: int = 40, is_image: bool= False):
         """
         统一响应发送器，根据配置发送图片或文本
         :param font_size: 生成图片时使用的字体大小
         """
-        if self.xiu_config.cmd_img:
+        if self.xiu_config.cmd_img or is_image:
             formatted_msg = await pic_msg_format(msg, event)
             # v-- 这是本次修正的核心：将 font_size 参数传递给图片生成函数 --v
             image_path = await get_msg_pic(formatted_msg, title, font_size)
@@ -476,11 +476,11 @@ class XiuxianPlugin(Star):
             msg_lines.append(f"天降祥瑞，恭喜道友成功突破至【{next_level}】！")
         else:
             # --- 突破失败 ---
-            self.XiuXianService.update_hp(user_id, 999999999, 2) # HP置为1
+            self.XiuXianService.update_hp(user_id, user_real_info.get("hp", 9999999999)-1, 2) # HP置为1
             # 确保至少剩1点血
-            cur = self.XiuXianService.conn.cursor()
-            cur.execute("UPDATE user_xiuxian SET hp = 1 WHERE user_id = ? and hp <= 0", (user_id,))
-            self.XiuXianService.conn.commit()
+            # cur = self.XiuXianService.conn.cursor()
+            # cur.execute("UPDATE user_xiuxian SET hp = 1 WHERE user_id = ? and hp <= 0", (user_id,))
+            # self.XiuXianService.conn.commit()
 
             rate_gain = max(1, int(base_rate * self.xiu_config.level_up_probability))
             self.XiuXianService.update_user_level_up_rate(user_id, rate_gain)
@@ -5701,7 +5701,7 @@ class XiuxianPlugin(Star):
                 f"  到期时间: {due_time_obj.strftime('%Y-%m-%d %H:%M')}"
             )
         msg_lines.append("\n请使用【赎回 抵押编号】进行赎回。")
-        async for r in self._send_response(event, "\n".join(msg_lines), "我的抵押品", font_size=26): yield r
+        async for r in self._send_response(event, "\n".join(msg_lines), "我的抵押品", font_size=26, is_image= True): yield r
 
     @filter.command("赎回")
     @command_lock
