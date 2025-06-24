@@ -53,7 +53,7 @@ class PvPManager:
         turn_p1 = p1_state.power >= p2_state.power # 假设 power 是一个初始战斗力用于决定先手
 
         for round_num in range(1, max_rounds + 1):
-            battle_round_details_log.append(f"ዙ 回合 {round_num} ዙ")
+            battle_round_details_log.append(f"-----------------回合 {round_num} -----------------")
 
             p1_state.tick_cooldowns_and_effects()
             p2_state.tick_cooldowns_and_effects()

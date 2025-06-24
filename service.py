@@ -4,6 +4,7 @@ import random
 import sqlite3
 from collections import namedtuple
 import time
+import re
 
 from astrbot.api import logger
 
@@ -2702,3 +2703,73 @@ class XiuxianService:
         if expired_count > 0:
             logger.info(f"处理了 {expired_count} 条逾期抵押记录，已将其标记为 'expired' (没收)。")
         return expired_count
+
+    def mortgage_all_items_by_type(self, user_id: str, item_type_filter: str | None = None, due_days: int = 30) -> tuple[int, int, list[str]]:
+        """
+        一键抵押背包中所有符合条件的物品。
+        :param user_id: 用户ID。
+        :param item_type_filter: 可选，指定要抵押的物品类型 (如 "法器", "功法", "防具", "神通")。
+                                 如果为 None，则抵押所有可抵押类型的物品。
+        :param due_days: 抵押期限（天）。
+        :return: (成功抵押数量, 总贷款金额, 详细消息列表)
+        """
+        user_info = self.get_user_message(user_id)
+        if not user_info:
+            return 0, 0, ["错误：用户信息不存在。"]
+
+        backpack_items = self.get_user_back_msg(user_id)
+        if not backpack_items:
+            return 0, 0, ["道友背包空空如也，无可抵押之物。"]
+
+        allowed_mortgage_types = ["法器", "功法", "防具", "神通"]
+
+        items_to_process = []
+        if item_type_filter:
+            if item_type_filter not in allowed_mortgage_types:
+                return 0, 0, [f"错误：指定的物品类型“{item_type_filter}”不可抵押。"]
+            # 筛选特定类型的物品
+            for item_in_back in backpack_items:
+                item_definition = self.items.get_data_by_item_id(item_in_back.goods_id)
+                if item_definition and item_definition.get('item_type') == item_type_filter:
+                    items_to_process.append(item_in_back)
+        else:
+            # 处理所有可抵押类型的物品
+            for item_in_back in backpack_items:
+                item_definition = self.items.get_data_by_item_id(item_in_back.goods_id)
+                if item_definition and item_definition.get('item_type') in allowed_mortgage_types:
+                    items_to_process.append(item_in_back)
+        if not items_to_process:
+            filter_msg = f"类型为【{item_type_filter}】的" if item_type_filter else ""
+            return 0, 0, [f"道友背包中没有{filter_msg}可供抵押的珍宝。"]
+
+        successful_mortgages = 0
+        total_loan_received = 0
+        messages = []
+
+        # 注意：在循环中修改背包列表（通过 remove_item）是不安全的。
+        # 更好的做法是先收集所有要抵押的物品信息，然后统一处理。
+        # 但由于 create_mortgage 内部会调用 remove_item，我们需要确保它处理的是单个物品。
+        # 这里我们逐个调用 create_mortgage。
+        for item_to_mortgage_in_back in items_to_process:
+            # 每次抵押一件，因为 create_mortgage 设计为处理单件
+            for _ in range(item_to_mortgage_in_back.goods_num): # 如果一个物品有多件，分别抵押
+                success, msg = self.create_mortgage(user_id, str(item_to_mortgage_in_back.goods_id), item_to_mortgage_in_back.goods_name, due_days)
+                messages.append(msg)
+                if success:
+                    successful_mortgages += 1
+                    # 从消息中提取贷款金额 (这是一个不太稳健的做法，最好 create_mortgage 能返回贷款额)
+                    try:
+                        loan_match = re.search(r"获得贷款 (\d+) 灵石", msg)
+                        if loan_match:
+                            total_loan_received += int(loan_match.group(1))
+                    except Exception:
+                        pass # 提取失败就算了
+                else:
+                    # 如果单件抵押失败，可能因为价值过低或背包中实际已无（并发问题？），记录但不中断
+                    logger.warning(f"一键抵押中，物品 {item_to_mortgage_in_back.goods_name} 单件抵押失败: {msg}")
+
+        if successful_mortgages > 0:
+            summary_msg = f"\n--- 一键抵押总结 ---\n成功抵押 {successful_mortgages} 件物品，共获得贷款 {total_loan_received} 灵石。"
+            messages.append(summary_msg)
+
+        return successful_mortgages, total_loan_received, messages

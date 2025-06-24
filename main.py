@@ -1155,6 +1155,12 @@ class XiuxianPlugin(Star):
                     elif not is_for_current_player: # 对其他攻击者可以简单记录日志
                          logger.info(f"BOSS战参与者 {attacker_player_id} 获得奖励: {', '.join(player_drop_details)}")
 
+              # 构造简单的广播消息
+            broadcast_final_message = (
+                f"🎉 世界BOSS【{boss_combat_info['name']}】已被道友【{player_real_info['user_name']}】成功讨伐！🎉\n"
+                "感谢各位道友的英勇奋战！详细奖励已发放给最后一击者及贡献者。"
+            )
+            await self.scheduler._broadcast_to_groups(broadcast_final_message, "世界BOSS已被讨伐")
             # 清理BOSS
             self.XiuXianService.delete_boss(current_world_boss_data['id'])
             self.world_boss = None # 清理插件实例中的BOSS缓存
@@ -5705,3 +5711,33 @@ class XiuxianPlugin(Star):
         async for r in self._send_response(event, message): yield r
 
     # 可以在每日任务或特定时机调用，清理所有用户的逾期抵押
+
+    @filter.command("一键抵押")
+    @command_lock
+    async def mass_mortgage_cmd(self, event: AstrMessageEvent):
+        await self._update_active_groups(event)
+        user_id = event.get_sender_id()
+        is_user, _, msg_check = check_user(self.XiuXianService, user_id)
+        if not is_user:
+            async for r in self._send_response(event, msg_check): yield r
+            return
+
+        args = event.message_str.split()
+        item_type_to_mass_mortgage = None
+        if len(args) > 1:
+            item_type_to_mass_mortgage = args[1]
+            allowed_types_for_filter = ["法器", "功法", "防具", "神通"]
+            if item_type_to_mass_mortgage not in allowed_types_for_filter:
+                msg = f"指定抵押的物品类型【{item_type_to_mass_mortgage}】无效。可选类型：法器, 功法, 防具, 神通。"
+                async for r in self._send_response(event, msg): yield r
+                return
+
+        # 调用服务层执行一键抵押
+        num_success, total_loan, detail_messages = self.XiuXianService.mortgage_all_items_by_type(user_id, item_type_to_mass_mortgage)
+
+        if not detail_messages: # 理论上至少会有一条消息
+            final_message = "一键抵押执行完毕，但似乎没有产生任何操作。"
+        else:
+            final_message = "\n".join(detail_messages)
+
+        async for r in self._send_response(event, final_message, "一键抵押报告", font_size=24): yield r
