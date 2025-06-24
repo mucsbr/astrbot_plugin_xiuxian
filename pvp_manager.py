@@ -218,6 +218,36 @@ class PvPManager:
                         healed_by_leech = attacker.hp - original_attacker_hp
                         if healed_by_leech > 0:
                            battle_round_details_log.append(f"🩸【{sub_buff_data_attacker['name']}】效果发动，{attacker.user_name} 吸取了 {healed_by_leech} 点气血！")
+                elif sub_buff_data_attacker and sub_buff_data_attacker.get("buff_type") == "7":  # 吸血
+                    leech_percent = float(sub_buff_data_attacker.get("buff", "0")) / 100.0
+                    damage_source_for_leech = 0
+                    if used_skill_this_turn and skill_type == 1:
+                        damage_source_for_leech = total_skill_damage  # total_skill_damage 在上面 skill_type 1 处定义
+                    elif not used_skill_this_turn:
+                        damage_source_for_leech = damage_dealt  # damage_dealt 在上面普攻处定义
+
+                    leech_amount = int(damage_source_for_leech * leech_percent)
+                    if leech_amount > 0:
+                        original_attacker_mp = attacker.mp
+                        attacker.mp = min(attacker.base_mp, attacker.mp + leech_amount)  # 注意这里用 base_hp 作为上限
+                        healed_by_leech = attacker.mp - original_attacker_mp
+                        if healed_by_leech > 0:
+                            battle_round_details_log.append(
+                                f"🩸【{sub_buff_data_attacker['name']}】效果发动，{attacker.user_name} 吸取了 {healed_by_leech} 点真元！")
+                elif sub_buff_data_attacker and sub_buff_data_attacker.get("buff_type") == "8": # 对敌中毒效果
+                    # 假设 "buff" 字段存储的是每回合中毒伤害占攻击者当前攻击力的百分比
+                    # 并且辅修功法JSON中应有 "poison_duration" 和 "poison_chance" 字段
+                    poison_damage_percent_of_atk = float(sub_buff_data_attacker.get("buff", "0")) / 100.0
+                    poison_duration = int(sub_buff_data_attacker.get("poison_duration", 3)) # 默认持续3回合
+                    poison_chance = float(sub_buff_data_attacker.get("poison_chance", 0.5)) # 默认30%概率
+
+                    if random.random() < poison_chance:
+                        # 中毒伤害基于攻击者当前的攻击力
+                        damage_per_turn_for_poison = int(defender.hp * poison_damage_percent_of_atk)
+                        if damage_per_turn_for_poison > 0 and poison_duration > 0:
+                            # 使用辅修功法的名称作为DoT效果的名称
+                            defender.add_dot_effect(sub_buff_data_attacker['name'], damage_per_turn_for_poison, poison_duration, attacker.user_id)
+                            battle_round_details_log.append(f"☠️【{sub_buff_data_attacker['name']}】效果触发！【{defender.user_name}】身中剧毒，将在接下来 {poison_duration} 回合持续受到伤害！")
 
             # 检查防御方是否阵亡
             if defender.hp <= 0:
