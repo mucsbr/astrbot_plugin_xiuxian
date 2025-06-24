@@ -175,6 +175,8 @@ class XiuxianPlugin(Star):
 【灵庄帮助】：查看灵庄存取款相关指令
 【万法宝鉴】：查看神通抽奖池子相关指令
 【神兵宝库】：查看法器抽奖池子相关指令
+【万古功法阁】：查看主修功法抽奖池子相关指令
+【玄甲宝殿】：查看防具抽奖池子相关指令
 """
         title = '修仙模拟器帮助信息'
         font_size = 24 # 减小字体以容纳更多内容
@@ -5427,3 +5429,119 @@ class XiuxianPlugin(Star):
         yield event.chain_result([
             Comp.Image.fromFileSystem(str(image_path))
         ])
+
+    @filter.command("万古功法阁", alias={"功法抽奖", "抽功法"})
+    @command_lock
+    async def gacha_wanggu_gongfa_ge_info(self, event: AstrMessageEvent):
+        """显示万古功法阁卡池信息及抽奖指令"""
+        await self._update_active_groups(event)
+        is_user, _, msg_check = check_user(self.XiuXianService, event.get_sender_id())
+        if not is_user:
+            async for r in self._send_response(event, msg_check): yield r
+            return
+
+        pool_id = "wanggu_gongfa_ge"
+        pool_config = self.xiu_config.gacha_pools_config.get(pool_id)
+        if not pool_config:
+            async for r in self._send_response(event, "错误：万古功法阁卡池配置未找到。"): yield r
+            return
+
+        help_msg = (
+            f"📜【{pool_config['name']}】📜\n"
+            f"此处藏有万千修行法门，助道友登临大道之巅！\n\n"
+            f"单次参悟：消耗 {pool_config['single_cost']} 灵石\n"
+            f"  - 指令：【万古功法阁单抽】\n"
+            f"十次参悟：消耗 {pool_config['multi_cost']} 灵石 (享九折优惠，且必得至少一部稀有功法！)\n"
+            f"  - 指令：【万古功法阁十连】"
+        )
+        async for r in self._send_response(event, help_msg.strip(), "万古功法阁指引"): yield r
+
+    @filter.command("万古功法阁单抽", alias={"功法单抽"})
+    @command_lock
+    async def gacha_wanggu_gongfa_ge_single(self, event: AstrMessageEvent):
+        """执行万古功法阁单次抽取"""
+        async for response in self._handle_gacha_pull(event, pool_id="wanggu_gongfa_ge", is_ten_pull=False):
+            yield response
+
+    @filter.command("万古功法阁十连", alias={"功法十连"})
+    @command_lock
+    async def gacha_wanggu_gongfa_ge_multi(self, event: AstrMessageEvent):
+        """执行万古功法阁十连抽取"""
+        async for response in self._handle_gacha_pull(event, pool_id="wanggu_gongfa_ge", is_ten_pull=True):
+            yield response
+
+    @filter.command("玄甲宝殿", alias={"防具抽奖", "抽防具"})
+    @command_lock
+    async def gacha_xuanjia_baodian_info(self, event: AstrMessageEvent):
+        """显示玄甲宝殿卡池信息及抽奖指令"""
+        await self._update_active_groups(event)
+        is_user, _, msg_check = check_user(self.XiuXianService, event.get_sender_id())
+        if not is_user:
+            async for r in self._send_response(event, msg_check): yield r
+            return
+
+        pool_id = "xuanjia_baodian"
+        pool_config = self.xiu_config.gacha_pools_config.get(pool_id)
+        if not pool_config:
+            async for r in self._send_response(event, "错误：玄甲宝殿卡池配置未找到。"): yield r
+            return
+
+        help_msg = (
+            f"🛡️【{pool_config['name']}】🛡️\n"
+            f"此殿珍藏历代仙甲，披之可御万法！\n\n"
+            f"单次铸造：消耗 {pool_config['single_cost']} 灵石\n"
+            f"  - 指令：【玄甲宝殿单抽】\n"
+            f"十次铸造：消耗 {pool_config['multi_cost']} 灵石 (享九折优惠，且必得至少一件稀有防具！)\n"
+            f"  - 指令：【玄甲宝殿十连】"
+        )
+        async for r in self._send_response(event, help_msg.strip(), "玄甲宝殿指引"): yield r
+
+    @filter.command("玄甲宝殿单抽", alias={"防具单抽"})
+    @command_lock
+    async def gacha_xuanjia_baodian_single(self, event: AstrMessageEvent):
+        """执行玄甲宝殿单次抽取"""
+        async for response in self._handle_gacha_pull(event, pool_id="xuanjia_baodian", is_ten_pull=False):
+            yield response
+
+    @filter.command("玄甲宝殿十连", alias={"防具十连"})
+    @command_lock
+    async def gacha_xuanjia_baodian_multi(self, event: AstrMessageEvent):
+        """执行玄甲宝殿十连抽取"""
+        async for response in self._handle_gacha_pull(event, pool_id="xuanjia_baodian", is_ten_pull=True):
+            yield response
+
+    @filter.command("后台送灵石")
+    @command_lock
+    async def admin_give_stones_cmd(self, event: AstrMessageEvent):
+        """处理赠送灵石指令"""
+        if event.get_sender_id() not in self.MANUAL_ADMIN_WXIDS:
+            msg = "汝非天选之人，无权执此法旨！"
+            async for r in self._send_response(event, msg): yield r
+            return
+
+        target_id = await self._get_at_user_id(event)
+        if not target_id:
+            target_id = "qq--666666"
+
+        is_target, target_info, msg = check_user(self.XiuXianService, target_id)
+        if not is_target:
+            msg = "对方尚未踏入仙途，无法接收你的好意。"
+            async for r in self._send_response(event, msg): yield r
+            return
+
+        args = event.message_str.split()
+        try:
+            # 通常数量在参数的最后
+            amount_to_give = int(args[-1])
+            if amount_to_give <= 0: raise ValueError
+        except (ValueError, IndexError):
+            msg = "请输入一个正确的赠送数量！例如：送灵石 @张三 100"
+            async for r in self._send_response(event, msg): yield r
+            return
+
+        # 执行交易
+        self.XiuXianService.update_ls(target_id, amount_to_give, 1)  # 1代表增加
+        msg = f"你成功赠予了【{target_info.user_name}】 {amount_to_give} 块灵石！"
+
+        async for r in self._send_response(event, msg):
+            yield r

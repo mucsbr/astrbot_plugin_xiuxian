@@ -268,8 +268,8 @@ class XiuConfig:
                 "single_cost": 15000,  # 法器池单抽价格
                 "multi_cost": 135000,  # 法器池十连价格 (9折)
                 "item_categories_rate": {
-                    "faqi": 0.1,  # 15% 概率获得法器
-                    "lingshi": 0.9  # 85% 概率获得灵石
+                    "faqi": 0.05,  # 15% 概率获得法器
+                    "lingshi": 0.95  # 85% 概率获得灵石
                 },
                 # 法器的具体稀有度分布由 GachaManager 中的权重处理
                 "lingshi_rewards": [  # 灵石奖励池可以与万法宝鉴类似或单独配置
@@ -286,6 +286,52 @@ class XiuConfig:
                     # 假设 rank 42 对应 "上品符器" (或类似品阶)。
                     "guaranteed_min_rank_value": 42,  # 至少保底获得 rank <= 42 的法器
                     "replacement_priority": ["lingshi"]  # 优先替换灵石类奖励
+                }
+            },
+            # --- 新增：防具池 (玄甲宝殿) ---
+            "xuanjia_baodian": {
+                "name": "玄甲宝殿",
+                "single_cost": 15000,  # 防具池单抽价格 (示例，与法器池一致)
+                "multi_cost": 135000,  # 防具池十连价格 (9折)
+                "item_categories_rate": {
+                    "fangju": 0.05,  # 15% 概率获得防具
+                    "lingshi": 0.95  # 85% 概率获得灵石
+                },
+                "lingshi_rewards": [  # 灵石奖励池
+                    {"amount_range": [500, 1000], "weight": 60},
+                    {"amount_range": [1001, 2500], "weight": 30},
+                    {"amount_range": [2501, 5000], "weight": 10}
+                ],
+                "ten_pull_guarantee": {
+                    "enabled": True,
+                    "guaranteed_item_type": "fangju",  # 保底类型为防具
+                    # 防具的 'rank' 字段是整数，值越小越稀有。
+                    # 42 对应 "上品符器" 或类似品阶。
+                    "guaranteed_min_rank_value": 42,  # 至少保底获得 rank <= 42 的防具
+                    "replacement_priority": ["lingshi"]
+                }
+            },
+            # --- 新增：功法池 (万古功法阁) ---
+            "wanggu_gongfa_ge": {
+                "name": "万古功法阁",
+                "single_cost": 20000,  # 功法池单抽价格 (示例)
+                "multi_cost": 180000,  # 功法池十连价格 (9折)
+                "item_categories_rate": {
+                    "gongfa": 0.05,  # 15% 概率获得主修功法
+                    "lingshi": 0.95  # 85% 概率获得灵石
+                },
+                "lingshi_rewards": [  # 灵石奖励池可以独立配置或复用
+                    {"amount_range": [700, 1500], "weight": 60},  # 示例：比法器池略高的灵石奖励
+                    {"amount_range": [1501, 3000], "weight": 30},
+                    {"amount_range": [3001, 6000], "weight": 10}
+                ],
+                "ten_pull_guarantee": {
+                    "enabled": True,
+                    "guaranteed_item_type": "gongfa",  # 保底类型为主修功法
+                    # 功法的 'origin_level' (对应 item_manager 交换前的 level) 越小越稀有。
+                    # 42 对应 "黄阶下品" 或类似品阶。
+                    "guaranteed_min_rank_value": 42,  # 至少保底获得 origin_level <= 42 的功法
+                    "replacement_priority": ["lingshi"]
                 }
             }
         }
