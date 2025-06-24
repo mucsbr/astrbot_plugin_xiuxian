@@ -3,7 +3,6 @@ import json
 import random
 import sqlite3
 from collections import namedtuple
-from pathlib import Path
 import time
 
 from astrbot.api import logger
@@ -162,6 +161,20 @@ class XiuxianService:
                     "group_id" TEXT NOT NULL,
                     "user_name" TEXT
                 );
+            """,
+           "user_mortgage": """
+            CREATE TABLE "user_mortgage" (
+                "mortgage_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                "user_id" TEXT NOT NULL,
+                "item_id_original" INTEGER NOT NULL,
+                "item_name" TEXT NOT NULL,
+                "item_type" TEXT NOT NULL,
+                "item_data_json" TEXT NOT NULL,
+                "loan_amount" INTEGER NOT NULL,
+                "mortgage_time" TEXT NOT NULL,
+                "due_time" TEXT NOT NULL,
+                "status" TEXT NOT NULL DEFAULT 'active'
+            );
             """,
             "BuffInfo": """
                 CREATE TABLE "BuffInfo" (
@@ -2453,3 +2466,239 @@ class XiuxianService:
         except Exception as e:
             logger.error(f"更新物品 {goods_id} 的使用次数失败 for user {user_id}: {e}")
             self.conn.rollback()
+
+    def get_item_mortgage_loan_amount(self, item_id_original_str: str, item_data_dict: dict) -> int:
+        """
+        计算给定物品的抵押贷款额度。
+        :param item_id_original_str: 物品在其原始JSON中的ID (字符串形式)。
+        :param item_data_dict: 物品的完整数据字典 (从 Items().get_data_by_item_id() 获取)。
+        :return: 可贷款的灵石数量，如果物品不可抵押或计算失败则返回0。
+        """
+        item_type = item_data_dict.get('item_type')
+        loan_amount = 0
+
+        items_manager = self.items
+
+        main_item_rate_from_pool = 0.15 # 卡池主要物品的综合爆率 (例如15%)
+
+        pool_id = None
+        single_pull_cost = 0
+        item_weight = 0
+        total_category_weight = 1 # 默认为1防止除零
+
+        if item_type == "法器":
+            pool_id = "shenbing_baoku"
+            rank_val = item_data_dict.get('rank')
+            if rank_val is None: return 0
+            item_weight = items_manager._get_faqi_rank_weight(int(rank_val))  # 调用 Items 类的方法
+            total_category_weight = items_manager.total_weight_faqi / 2  # 从 Items 实例获取
+        elif item_type == "功法" or item_type == "辅修功法": # 主修功法
+            pool_id = "wanggu_gongfa_ge"
+            origin_level_val = item_data_dict.get('origin_level')
+            if origin_level_val is None: return 0
+            item_weight = items_manager._get_gongfa_origin_level_weight(int(origin_level_val))  # 调用 Items 类的方法
+            total_category_weight = items_manager.total_weight_gongfa  # 从 Items 实例获取
+        elif item_type == "防具":
+            pool_id = "xuanjia_baodian"
+            rank_val = item_data_dict.get('rank')
+            if rank_val is None: return 0
+            item_weight = items_manager._get_fangju_rank_weight(int(rank_val))  # 调用 Items 类的方法
+            total_category_weight = items_manager.total_weight_fangju  # 从 Items 实例获取
+        elif item_type == "神通":
+            pool_id = "wanfa_baojian"
+            origin_level_val = item_data_dict.get('origin_level')
+            skill_type_from_data = item_data_dict.get('skill_type') # 1, 2, 3, 4
+            if origin_level_val is None or skill_type_from_data is None: return 0
+
+            item_weight = items_manager._get_shengtong_level_weight(int(origin_level_val))  # 调用 Items 类的方法
+
+            # 获取神通子类别及其在池子中的概率
+            pool_config_for_shengtong = self.xiu_config.gacha_pools_config.get(pool_id, {})
+            shengtong_type_rates = pool_config_for_shengtong.get('shengtong_type_rate', {})
+
+            # 映射 skill_type 到配置中的 key
+            st_type_key_in_config = None
+            if skill_type_from_data == 1: st_type_key_in_config = "attack"
+            elif skill_type_from_data == 3: st_type_key_in_config = "support_debuff"
+            elif skill_type_from_data in [2, 4]: st_type_key_in_config = "dot_control"
+
+            if not st_type_key_in_config: return 0
+
+            prob_of_this_st_type = shengtong_type_rates.get(st_type_key_in_config, 0)
+            if prob_of_this_st_type == 0: return 0
+
+            total_category_weight = items_manager.total_weight_shengtong_by_type.get(st_type_key_in_config,
+                                                                                     1)  # 从 Items 实例获取
+            if total_category_weight == 0: return 0
+
+            # 神通的 P(item_i_within_main_category) 需要额外乘以其子类别的选中概率
+            # P(item_i_within_shengtong_pool) = P(type_X) * (Weight(item_i) / TotalWeight(type_X_items))
+            main_item_rate_from_pool = main_item_rate_from_pool * prob_of_this_st_type
+        else:
+            return 0 # 不可抵押的类型
+
+        pool_config_for_cost = self.xiu_config.gacha_pools_config.get(pool_id)
+        if not pool_config_for_cost: return 0
+        single_pull_cost = pool_config_for_cost['single_cost']
+
+        if total_category_weight == 0: # 避免除以零
+            logger.warning(f"计算抵押价值时，物品类型 {item_type} 的总权重为0。")
+            return 0
+
+        prob_within_category = item_weight / total_category_weight
+        overall_prob = main_item_rate_from_pool * prob_within_category
+
+        if overall_prob == 0: # 避免除以零
+            logger.warning(f"计算抵押价值时，物品 {item_data_dict.get('name')} 的综合概率为0。")
+            return 0
+
+        expected_cost = single_pull_cost / overall_prob
+        loan_amount = int(expected_cost / 10) # 期望成本的一半
+
+        # 可以设置一个最低贷款额，例如至少100灵石，避免过低的无意义贷款
+        return max(100, loan_amount) if loan_amount > 0 else 0
+
+    def get_user_active_mortgages(self, user_id: str) -> list[dict]:
+        """获取用户所有状态为 'active' 的抵押记录"""
+        cur = self.conn.cursor()
+        cur.execute(
+            "SELECT mortgage_id, item_name, item_type, loan_amount, due_time FROM user_mortgage WHERE user_id = ? AND status = 'active' ORDER BY due_time ASC",
+            (user_id,)
+        )
+        rows = cur.fetchall()
+        mortgages = []
+        if rows:
+            columns = [desc[0] for desc in cur.description]
+            for row in rows:
+                mortgages.append(dict(zip(columns, row)))
+        return mortgages
+
+    def create_mortgage(self, user_id: str, item_id_in_backpack_str: str, item_name_in_backpack: str,
+                        due_days: int = 30) -> tuple[bool, str]:
+        """
+        创建一个新的抵押记录。
+        :param item_id_in_backpack_str: 玩家背包中物品的ID (通常是其在 items.json 中的原始ID，字符串形式)
+        :param item_name_in_backpack: 玩家背包中物品的名称 (用于从背包移除)
+        :param due_days: 抵押期限（天）
+        :return: (success: bool, message: str)
+        """
+        user_info = self.get_user_message(user_id)
+        if not user_info:
+            return False, "用户信息不存在。"
+
+        # 1. 从背包中找到该物品并获取其完整信息
+        # 注意：get_item_by_name 返回的是 BackpackItem 具名元组，我们需要原始物品数据
+        # 我们需要通过 item_id_in_backpack_str 从 Items() 获取物品的权威数据
+        item_data_dict = self.items.get_data_by_item_id(int(item_id_in_backpack_str))
+        if not item_data_dict:
+            return False, f"错误：无法在物品库中找到ID为 {item_id_in_backpack_str} 的物品定义。"
+
+        # 2. 检查物品是否可抵押 (类型检查)
+        allowed_mortgage_types = ["法器", "功法", "防具", "神通"]
+        if item_data_dict.get('item_type') not in allowed_mortgage_types:
+            return False, f"【{item_name_in_backpack}】的类型不可抵押。"
+
+        # 3. 计算贷款额度
+        loan_amount = self.get_item_mortgage_loan_amount(item_id_in_backpack_str, item_data_dict)
+        if loan_amount <= 0:
+            return False, f"【{item_name_in_backpack}】价值过低或无法评估，无法抵押。"
+
+        # 4. 从玩家背包移除物品 (假设一次抵押一件)
+        if not self.remove_item(user_id, item_name_in_backpack, 1):
+            return False, f"抵押失败：从背包移除【{item_name_in_backpack}】时出错，可能数量不足。"
+
+        # 5. 记录抵押信息
+        mortgage_time = datetime.now()
+        due_time = mortgage_time + timedelta(days=due_days)
+        item_data_json_str = json.dumps(item_data_dict, ensure_ascii=False)
+
+        try:
+            cur = self.conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO user_mortgage 
+                (user_id, item_id_original, item_name, item_type, item_data_json, loan_amount, mortgage_time, due_time, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active')
+                """,
+                (user_id, int(item_id_in_backpack_str), item_name_in_backpack, item_data_dict.get('item_type'),
+                 item_data_json_str, loan_amount, str(mortgage_time), str(due_time))
+            )
+            # 6. 发放贷款给玩家
+            self.update_ls(user_id, loan_amount, 1)  # 1 代表增加
+            self.conn.commit()
+            return True, f"成功将【{item_name_in_backpack}】抵押给银行，获得贷款 {loan_amount} 灵石！请在 {due_days} 天内（{due_time.strftime('%Y-%m-%d %H:%M')}前）赎回。"
+        except Exception as e:
+            logger.error(f"创建抵押记录失败 for user {user_id}, item {item_name_in_backpack}: {e}")
+            # 尝试回滚背包操作（如果可能且必要）
+            self.add_item(user_id, int(item_id_in_backpack_str), item_data_dict.get('item_type'), 1)
+            return False, "抵押过程中发生数据库错误，操作已取消。"
+
+    def redeem_mortgage(self, user_id: str, mortgage_id: int) -> tuple[bool, str]:
+        """处理赎回操作"""
+        user_info = self.get_user_message(user_id)
+        if not user_info:
+            return False, "用户信息不存在。"
+
+        cur = self.conn.cursor()
+        cur.execute(
+            "SELECT item_id_original, item_name, item_type, item_data_json, loan_amount, status, due_time FROM user_mortgage WHERE mortgage_id = ? AND user_id = ?",
+            (mortgage_id, user_id)
+        )
+        mortgage_record = cur.fetchone()
+
+        if not mortgage_record:
+            return False, "未找到该抵押记录，或此记录不属于你。"
+
+        record_dict = dict(zip([desc[0] for desc in cur.description], mortgage_record))
+
+        if record_dict['status'] != 'active':
+            return False, f"此抵押品【{record_dict['item_name']}】的状态为 {record_dict['status']}，无法赎回。"
+
+        # 检查是否逾期 (虽然我们有单独的处理函数，但赎回时也应检查)
+        due_time_obj = datetime.fromisoformat(record_dict['due_time'])
+        if datetime.now() > due_time_obj:
+            # 自动处理为逾期并没收
+            cur.execute("UPDATE user_mortgage SET status = 'expired' WHERE mortgage_id = ?", (mortgage_id,))
+            self.conn.commit()
+            return False, f"抵押品【{record_dict['item_name']}】已于 {due_time_obj.strftime('%Y-%m-%d %H:%M')} 到期，已被银行没收。"
+
+        # 计算应还金额 (当前无利息，即为贷款金额)
+        amount_to_repay = record_dict['loan_amount']
+
+        if user_info.stone < amount_to_repay:
+            return False, f"灵石不足！赎回【{record_dict['item_name']}】需要 {amount_to_repay} 灵石。"
+
+        try:
+            # 1. 扣除玩家灵石
+            self.update_ls(user_id, amount_to_repay, 2)  # 2 代表减少
+            # 2. 将物品添加回玩家背包
+            # item_data_original = json.loads(record_dict['item_data_json']) # 理论上不需要，因为 item_type 和 item_id_original 足够
+            self.add_item(user_id, record_dict['item_id_original'], record_dict['item_type'], 1)
+            # 3. 更新抵押记录状态
+            cur.execute("UPDATE user_mortgage SET status = 'redeemed' WHERE mortgage_id = ?", (mortgage_id,))
+            self.conn.commit()
+            return True, f"成功赎回【{record_dict['item_name']}】，花费 {amount_to_repay} 灵石。"
+        except Exception as e:
+            logger.error(f"赎回抵押品失败 for user {user_id}, mortgage_id {mortgage_id}: {e}")
+            # 此处可能需要更复杂的事务回滚，但暂时简化
+            return False, "赎回过程中发生数据库错误。"
+
+    def check_and_handle_expired_mortgages(self, user_id_filter: str = None):
+        """检查并处理所有（或特定用户的）逾期抵押，将其状态更新为 'expired' (没收)"""
+        now_str = str(datetime.now())
+        cur = self.conn.cursor()
+        if user_id_filter:
+            cur.execute(
+                "UPDATE user_mortgage SET status = 'expired' WHERE user_id = ? AND status = 'active' AND due_time < ?",
+                (user_id_filter, now_str)
+            )
+        else:
+            cur.execute(
+                "UPDATE user_mortgage SET status = 'expired' WHERE status = 'active' AND due_time < ?",
+                (now_str,)
+            )
+        expired_count = cur.rowcount
+        self.conn.commit()
+        if expired_count > 0:
+            logger.info(f"处理了 {expired_count} 条逾期抵押记录，已将其标记为 'expired' (没收)。")
+        return expired_count

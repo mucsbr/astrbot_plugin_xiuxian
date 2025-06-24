@@ -177,6 +177,7 @@ class XiuxianPlugin(Star):
 【神兵宝库】：查看法器抽奖池子相关指令
 【万古功法阁】：查看主修功法抽奖池子相关指令
 【玄甲宝殿】：查看防具抽奖池子相关指令
+【银行帮助】：查看物品抵押贷款相关指令
 """
         title = '修仙模拟器帮助信息'
         font_size = 24 # 减小字体以容纳更多内容
@@ -1833,10 +1834,7 @@ class XiuxianPlugin(Star):
         gather_config = self.xiu_config.herb_gathering_config
         # 计算加速后的收取周期
         speed_up_bonus = gather_config['speed_up_rate'] * jlq_level
-        logger.info("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-        logger.info(speed_up_bonus)
         required_hours = gather_config['time_cost'] * (1 - speed_up_bonus)
-        logger.info(required_hours)
 
         # 计算从上次收取到现在过去了多少个周期
         time_diff_hours = (now_time - last_time).total_seconds() / 3600
@@ -5545,3 +5543,165 @@ class XiuxianPlugin(Star):
 
         async for r in self._send_response(event, msg):
             yield r
+
+    @filter.command("抵押帮助")
+    @command_lock
+    async def bank_mortgage_help_cmd(self, event: AstrMessageEvent):
+        await self._update_active_groups(event)
+        help_text = """
+🏦【银行抵押系统帮助】🏦
+道友可将符合条件的闲置珍宝抵押给银行换取灵石周转。
+
+可用指令:
+1. 【抵押列表】：查看背包中可用于抵押的物品及其预估贷款额。
+2. 【抵押 [列表编号]】：选择“抵押列表”中的物品进行抵押。
+   - 示例: 抵押 1
+3. 【我的抵押】：查看当前已抵押的物品、贷款额及到期时间。
+4. 【赎回 [抵押编号]】：选择“我的抵押”中的记录进行赎回。
+   - 示例: 赎回 123
+
+注意事项:
+- 目前可抵押类型：法器、功法、防具、神通。
+- 抵押期限：默认为30天。
+- 利息：当前版本暂无利息。
+- 逾期处理：逾期未赎回的物品将被银行没收。
+        """.strip()
+        async for r in self._send_response(event, help_text, "银行抵押帮助", font_size=28):
+            yield r
+
+    @filter.command("抵押列表")
+    @command_lock
+    async def view_mortgageable_items_cmd(self, event: AstrMessageEvent):
+        await self._update_active_groups(event)
+        user_id = event.get_sender_id()
+        is_user, _, msg_check = check_user(self.XiuXianService, user_id)
+        if not is_user:
+            async for r in self._send_response(event, msg_check): yield r
+            return
+
+        backpack_items = self.XiuXianService.get_user_back_msg(user_id)
+        if not backpack_items:
+            async for r in self._send_response(event, "道友背包空空如也，无可抵押之物。"): yield r
+            return
+
+        mortgageable_items_display = []
+        self.temp_mortgageable_list = {}  # 临时存储可抵押物品，方便后续按编号抵押
+
+        allowed_types = ["法器", "功法", "辅修功法", "防具", "神通"]
+        item_display_idx = 1
+        for item_in_back in backpack_items:
+            # 从 self.XiuXianService.items 获取物品的权威定义
+            item_definition = self.XiuXianService.items.get_data_by_item_id(item_in_back.goods_id)
+            if item_definition and item_definition.get('item_type') in allowed_types:
+                loan_amount = self.XiuXianService.get_item_mortgage_loan_amount(
+                    str(item_in_back.goods_id),
+                    item_definition
+                )
+                if loan_amount > 0:
+                    mortgageable_items_display.append(
+                        f"编号 {item_display_idx}: 【{item_definition.get('name')}】({item_definition.get('item_type')}) "
+                        f"- 可贷: {loan_amount} 灵石 (拥有: {item_in_back.goods_num}件)"
+                    )
+                    # 存储关键信息以便按编号抵押，只抵押一件
+                    self.temp_mortgageable_list[str(item_display_idx)] = {
+                        "original_item_id": str(item_in_back.goods_id),
+                        "name": item_definition.get('name'),
+                        "type": item_definition.get('item_type')
+                    }
+                    item_display_idx += 1
+
+        if not mortgageable_items_display:
+            msg = "道友背包中暂无可抵押的珍宝。"
+        else:
+            msg = "道友背包中可抵押的物品如下 (仅显示可产生贷款额的物品)：\n" + "\n".join(mortgageable_items_display)
+            msg += "\n\n请使用【抵押 列表编号】进行操作。"
+
+        async for r in self._send_response(event, msg, "可抵押物品列表", font_size=26):
+            yield r
+
+    @filter.command("抵押")
+    @command_lock
+    async def mortgage_item_cmd(self, event: AstrMessageEvent):
+        await self._update_active_groups(event)
+        user_id = event.get_sender_id()
+        is_user, _, msg_check = check_user(self.XiuXianService, user_id)
+        if not is_user:
+            async for r in self._send_response(event, msg_check): yield r
+            return
+
+        args = event.message_str.split()
+        if len(args) < 2:
+            async for r in self._send_response(event, "指令格式错误！请使用：抵押 [列表编号]"): yield r
+            return
+
+        list_idx_str = args[1]
+        if not hasattr(self, 'temp_mortgageable_list') or list_idx_str not in self.temp_mortgageable_list:
+            async for r in self._send_response(event, "无效的列表编号，请先使用【抵押列表】查看。"): yield r
+            return
+
+        item_to_mortgage_info = self.temp_mortgageable_list[list_idx_str]
+
+        success, message = self.XiuXianService.create_mortgage(
+            user_id,
+            item_to_mortgage_info["original_item_id"],
+            item_to_mortgage_info["name"]
+            # due_days 默认是30天
+        )
+        if success:
+            del self.temp_mortgageable_list[list_idx_str]  # 成功后清除，避免重复抵押同一编号
+        async for r in self._send_response(event, message): yield r
+
+    @filter.command("我的抵押")
+    @command_lock
+    async def view_my_mortgages_cmd(self, event: AstrMessageEvent):
+        await self._update_active_groups(event)
+        user_id = event.get_sender_id()
+        is_user, _, msg_check = check_user(self.XiuXianService, user_id)
+        if not is_user:
+            async for r in self._send_response(event, msg_check): yield r
+            return
+
+        # 检查并处理该用户的逾期抵押
+        self.XiuXianService.check_and_handle_expired_mortgages(user_id)
+
+        active_mortgages = self.XiuXianService.get_user_active_mortgages(user_id)
+        if not active_mortgages:
+            async for r in self._send_response(event, "道友在银行暂无抵押物品。"): yield r
+            return
+
+        msg_lines = ["道友当前的抵押物品："]
+        for mortgage in active_mortgages:
+            due_time_obj = datetime.fromisoformat(mortgage['due_time'])
+            msg_lines.append(
+                f"抵押编号 {mortgage['mortgage_id']}: 【{mortgage['item_name']}】({mortgage['item_type']})\n"
+                f"  贷款额: {mortgage['loan_amount']} 灵石\n"
+                f"  到期时间: {due_time_obj.strftime('%Y-%m-%d %H:%M')}"
+            )
+        msg_lines.append("\n请使用【赎回 抵押编号】进行赎回。")
+        async for r in self._send_response(event, "\n".join(msg_lines), "我的抵押品", font_size=26): yield r
+
+    @filter.command("赎回")
+    @command_lock
+    async def redeem_mortgage_cmd(self, event: AstrMessageEvent):
+        await self._update_active_groups(event)
+        user_id = event.get_sender_id()
+        is_user, _, msg_check = check_user(self.XiuXianService, user_id)
+        if not is_user:
+            async for r in self._send_response(event, msg_check): yield r
+            return
+
+        args = event.message_str.split()
+        if len(args) < 2:
+            async for r in self._send_response(event, "指令格式错误！请使用：赎回 [抵押编号]"): yield r
+            return
+
+        try:
+            mortgage_id_to_redeem = int(args[1])
+        except ValueError:
+            async for r in self._send_response(event, "抵押编号必须是数字！"): yield r
+            return
+
+        success, message = self.XiuXianService.redeem_mortgage(user_id, mortgage_id_to_redeem)
+        async for r in self._send_response(event, message): yield r
+
+    # 可以在每日任务或特定时机调用，清理所有用户的逾期抵押

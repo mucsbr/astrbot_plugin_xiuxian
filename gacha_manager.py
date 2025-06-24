@@ -11,87 +11,86 @@ class GachaManager:
         self.service = service
         self.items_manager = items_manager # Items 实例
         self.xiu_config = xiu_config       # XiuConfig 实例
-        self.all_shengtongs = self.items_manager.get_data_by_item_type(['神通'])
-        self.all_faqi = self.items_manager.get_data_by_item_type(['法器'])
-        self.all_fangju = self.items_manager.get_data_by_item_type(['防具'])
-        self.all_gongfa = self.items_manager.get_data_by_item_type(['功法'])
-        self.all_fangju = self.items_manager.get_data_by_item_type(['防具'])
-        
-        # 预处理神通数据，按类型和稀有度（level）分层，并计算权重
-        self.prepared_shengtongs = self._prepare_shengtong_pool()
-        self.prepared_faqi = self._prepare_faqi_pool()
-        self.prepared_gongfa = self._prepare_gongfa_pool()
-        self.prepared_fangju = self._prepare_fangju_pool()
+        # self.all_shengtongs = self.items_manager.get_data_by_item_type(['神通'])
+        # self.all_faqi = self.items_manager.get_data_by_item_type(['法器'])
+        # self.all_fangju = self.items_manager.get_data_by_item_type(['防具'])
+        # self.all_gongfa = self.items_manager.get_data_by_item_type(['功法'])
+        # #
+        # # # 预处理神通数据，按类型和稀有度（level）分层，并计算权重
+        # self.prepared_shengtongs = self._prepare_shengtong_pool()
+        # self.prepared_faqi = self._prepare_faqi_pool()
+        # self.prepared_gongfa = self._prepare_gongfa_pool()
+        # self.prepared_fangju = self._prepare_fangju_pool()
 
-    def _get_shengtong_level_weight(self, level_value: int) -> int:
-        """
-        根据神通的 origin_level 值（越小越稀有）返回其在抽奖池中的权重。
-        """
-        if 1 <= level_value <= 10: return 1
-        if 11 <= level_value <= 20: return 3
-        if 21 <= level_value <= 23: return 3
-        if 24 <= level_value <= 26: return 9
-        if 27 <= level_value <= 32: return 15
-        if 33 <= level_value <= 39: return 30
-        if 40 <= level_value <= 50: return 50
-        logger.warning(f"神通的 origin_level 值 {level_value} 超出预期范围 (1-50)，使用默认最低权重1。")
-        return 1 # 对于超出预期范围的level，给予最低权重
+        # # 计算并存储各主要物品类型的总权重
+        # self.total_weight_faqi = sum(item['weight'] for item in self.prepared_faqi) if self.prepared_faqi else 700
+        # self.total_weight_gongfa = sum(
+        #     item['weight'] for item in self.prepared_gongfa) if self.prepared_gongfa else 700
+        # self.total_weight_fangju = sum(
+        #     item['weight'] for item in self.prepared_fangju) if self.prepared_fangju else 700
+        #
+        # self.total_weight_shengtong_by_type = {
+        #     'attack': sum(item['weight'] for item in self.prepared_shengtongs.get('attack', [])),
+        #     'support_debuff': sum(
+        #         item['weight'] for item in self.prepared_shengtongs.get('support_debuff', [])),
+        #     'dot_control': sum(item['weight'] for item in self.prepared_shengtongs.get('dot_control', []))
+        # }
 
-    def _prepare_shengtong_pool(self) -> dict:
-        """
-        加载并预处理神通数据，按skill_type分类，并为每个神通计算抽奖权重。
-        现在使用 st_data.get('origin_level') 来获取原始等级数值。
-        """
-        prepared = {
-            "attack": [],
-            "support_debuff": [],
-            "dot_control": []
-        }
-        if not self.all_shengtongs:
-            logger.warning("神通数据为空，万法宝鉴可能无法正确抽取神通。")
-            return prepared
-
-        for st_id, st_data in self.all_shengtongs.items():
-            skill_type = st_data.get('skill_type')
-            
-            # --- 修改点：使用 origin_level ---
-            origin_level_val = st_data.get('origin_level') # 这个应该是您添加的，保证是数字
-            # --- 结束修改点 ---
-
-            if origin_level_val is None: # 理论上不会发生，因为您设置了默认值1
-                logger.warning(f"神通 {st_data.get('name', st_id)} 缺少 'origin_level' 字段，将使用默认最高level值处理。")
-                origin_level_val = 50 # 假设50是最高（最不稀有）的level
-            
-            # 确保 origin_level_val 是整数
-            try:
-                level_val_for_weight = int(origin_level_val)
-            except (ValueError, TypeError):
-                logger.warning(f"神通 {st_data.get('name', st_id)} 的 'origin_level' 值 '{origin_level_val}' 不是有效整数，将使用默认最高level值处理。")
-                level_val_for_weight = 50
-
-            weight = self._get_shengtong_level_weight(level_val_for_weight)
-            
-            item_entry = {
-                "id": st_id,
-                "name": st_data.get('name', f"未知神通{st_id}"),
-                "level": level_val_for_weight, # 这里可以存处理过的整数level，或原始的origin_level，取决于后续是否需要
-                "weight": weight,
-                "data": st_data # 存储完整的神通数据，包含 'origin_level' 和转换后的 'level'/'rank'
-            }
-
-            if skill_type == 1:
-                prepared["attack"].append(item_entry)
-            elif skill_type == 3:
-                prepared["support_debuff"].append(item_entry)
-            elif skill_type == 2 or skill_type == 4:
-                prepared["dot_control"].append(item_entry)
-            else:
-                logger.warning(f"未知技能类型 {skill_type} for 神通 {st_id}")
-        
-        for category in prepared:
-            prepared[category].sort(key=lambda x: x['weight'])
-
-        return prepared
+    # def _prepare_shengtong_pool(self) -> dict:
+    #     """
+    #     加载并预处理神通数据，按skill_type分类，并为每个神通计算抽奖权重。
+    #     现在使用 st_data.get('origin_level') 来获取原始等级数值。
+    #     """
+    #     prepared = {
+    #         "attack": [],
+    #         "support_debuff": [],
+    #         "dot_control": []
+    #     }
+    #     if not self.all_shengtongs:
+    #         logger.warning("神通数据为空，万法宝鉴可能无法正确抽取神通。")
+    #         return prepared
+    #
+    #     for st_id, st_data in self.all_shengtongs.items():
+    #         skill_type = st_data.get('skill_type')
+    #
+    #         # --- 修改点：使用 origin_level ---
+    #         origin_level_val = st_data.get('origin_level') # 这个应该是您添加的，保证是数字
+    #         # --- 结束修改点 ---
+    #
+    #         if origin_level_val is None: # 理论上不会发生，因为您设置了默认值1
+    #             logger.warning(f"神通 {st_data.get('name', st_id)} 缺少 'origin_level' 字段，将使用默认最高level值处理。")
+    #             origin_level_val = 50 # 假设50是最高（最不稀有）的level
+    #
+    #         # 确保 origin_level_val 是整数
+    #         try:
+    #             level_val_for_weight = int(origin_level_val)
+    #         except (ValueError, TypeError):
+    #             logger.warning(f"神通 {st_data.get('name', st_id)} 的 'origin_level' 值 '{origin_level_val}' 不是有效整数，将使用默认最高level值处理。")
+    #             level_val_for_weight = 50
+    #
+    #         weight = self.items_manager._get_shengtong_level_weight(level_val_for_weight)
+    #
+    #         item_entry = {
+    #             "id": st_id,
+    #             "name": st_data.get('name', f"未知神通{st_id}"),
+    #             "level": level_val_for_weight, # 这里可以存处理过的整数level，或原始的origin_level，取决于后续是否需要
+    #             "weight": weight,
+    #             "data": st_data # 存储完整的神通数据，包含 'origin_level' 和转换后的 'level'/'rank'
+    #         }
+    #
+    #         if skill_type == 1:
+    #             prepared["attack"].append(item_entry)
+    #         elif skill_type == 3:
+    #             prepared["support_debuff"].append(item_entry)
+    #         elif skill_type == 2 or skill_type == 4:
+    #             prepared["dot_control"].append(item_entry)
+    #         else:
+    #             logger.warning(f"未知技能类型 {skill_type} for 神通 {st_id}")
+    #
+    #     for category in prepared:
+    #         prepared[category].sort(key=lambda x: x['weight'])
+    #
+    #     return prepared
 
 
     def _weighted_random_choice(self, items_with_weights: list) -> dict | None:
@@ -119,59 +118,42 @@ class GachaManager:
                 return item
         return items_with_weights[-1] # 理论上不会执行到这里，除非浮点数精度问题
 
-    def _get_faqi_rank_weight(self, rank_value: int) -> int:
-        """
-        根据法器的 rank 值（越小越稀有）返回其在抽奖池中的权重。
-        法器 ranks from 法器.json: 50 (common) down to 18 (rare).
-        权重分配策略：rank 值越小（越稀有），权重越低。
-        """
-        # 示例权重，您可以根据实际稀有度分布调整
-        if rank_value >= 48: return 150  # 例如：rank 50, 49, 48 (对应 "下品符器" 等级)
-        if rank_value >= 43: return 90  # 例如：rank 47-43 (对应 "上品符器" 等级)
-        if rank_value >= 37: return 40  # 例如：rank 42-37 (对应 "下品法器" 等级)
-        if rank_value >= 31: return 20  # 例如：rank 36-31 (对应 "上品法器" 等级)
-        if rank_value >= 28: return 8  # 例如：rank 30-28 (对应 "下品纯阳法器" 等级)
-        if rank_value >= 25: return 5  # 例如：rank 27-25 (对应 "上品纯阳法器"/"下品通天法器" 等级)
-        if rank_value >= 20: return 2  # 例如：rank 24-20 (对应 "上品通天法器"/"下品仙器" 等级)
-        if rank_value >= 18: return 1  # 例如：rank 18 (对应 "上品仙器" 等级)
-        logger.warning(f"法器的 rank 值 {rank_value} 超出预期范围 (18-50)，使用默认最低权重1。")
-        return 1  # 对于超出预期范围的rank，给予最低权重
 
-    def _prepare_faqi_pool(self) -> list:
-        """
-        加载并预处理法器数据，为每个法器计算抽奖权重。
-        法器的 'rank' 字段是整数，'level' 字段是品阶字符串。
-        """
-        prepared_faqi_list = []
-        if not self.all_faqi:
-            logger.warning("法器数据为空，神兵宝库可能无法正确抽取法器。")
-            return prepared_faqi_list
-
-        for faqi_id, faqi_data in self.all_faqi.items():
-            rank_val = faqi_data.get('rank')  # 这是整数 rank
-            if rank_val is None:
-                logger.warning(f"法器 {faqi_data.get('name', faqi_id)} 缺少 'rank' 字段，跳过。")
-                continue
-
-            try:
-                rank_int = int(rank_val)
-            except (ValueError, TypeError):
-                logger.warning(f"法器 {faqi_data.get('name', faqi_id)} 的 'rank' 值 '{rank_val}' 不是有效整数，跳过。")
-                continue
-
-            weight = self._get_faqi_rank_weight(rank_int)
-            item_entry = {
-                "id": faqi_id,
-                "name": faqi_data.get('name', f"未知法器{faqi_id}"),
-                "rank": rank_int,  # 存储整数 rank，用于保底判断
-                "weight": weight,
-                "data": faqi_data  # 存储完整的法器数据
-            }
-            prepared_faqi_list.append(item_entry)
-
-        # 按权重排序是可选的，但有助于调试或特定抽奖策略
-        prepared_faqi_list.sort(key=lambda x: x['weight'])
-        return prepared_faqi_list
+    # def _prepare_faqi_pool(self) -> list:
+    #     """
+    #     加载并预处理法器数据，为每个法器计算抽奖权重。
+    #     法器的 'rank' 字段是整数，'level' 字段是品阶字符串。
+    #     """
+    #     prepared_faqi_list = []
+    #     if not self.all_faqi:
+    #         logger.warning("法器数据为空，神兵宝库可能无法正确抽取法器。")
+    #         return prepared_faqi_list
+    #
+    #     for faqi_id, faqi_data in self.all_faqi.items():
+    #         rank_val = faqi_data.get('rank')  # 这是整数 rank
+    #         if rank_val is None:
+    #             logger.warning(f"法器 {faqi_data.get('name', faqi_id)} 缺少 'rank' 字段，跳过。")
+    #             continue
+    #
+    #         try:
+    #             rank_int = int(rank_val)
+    #         except (ValueError, TypeError):
+    #             logger.warning(f"法器 {faqi_data.get('name', faqi_id)} 的 'rank' 值 '{rank_val}' 不是有效整数，跳过。")
+    #             continue
+    #
+    #         weight = self.items_manager._get_faqi_rank_weight(rank_int)
+    #         item_entry = {
+    #             "id": faqi_id,
+    #             "name": faqi_data.get('name', f"未知法器{faqi_id}"),
+    #             "rank": rank_int,  # 存储整数 rank，用于保底判断
+    #             "weight": weight,
+    #             "data": faqi_data  # 存储完整的法器数据
+    #         }
+    #         prepared_faqi_list.append(item_entry)
+    #
+    #     # 按权重排序是可选的，但有助于调试或特定抽奖策略
+    #     prepared_faqi_list.sort(key=lambda x: x['weight'])
+    #     return prepared_faqi_list
 
     def _draw_single_item(self, pool_config: dict, pool_id: str) -> dict:  # 添加 pool_id 参数
         """
@@ -204,8 +186,8 @@ class GachaManager:
                     if rand_st_type <= cumulative_st_rate:
                         chosen_st_type_key = st_type_key
                         break
-                if chosen_st_type_key and self.prepared_shengtongs.get(chosen_st_type_key):
-                    shengtong_pool_for_type = self.prepared_shengtongs[chosen_st_type_key]
+                if chosen_st_type_key and self.items_manager.prepared_shengtongs_pool_by_type.get(chosen_st_type_key):
+                    shengtong_pool_for_type = self.items_manager.prepared_shengtongs_pool_by_type[chosen_st_type_key]
                     if shengtong_pool_for_type:
                         chosen_shengtong = self._weighted_random_choice(shengtong_pool_for_type)
                         if chosen_shengtong:
@@ -220,8 +202,8 @@ class GachaManager:
                     chosen_category = "lingshi"  # 强制降级
 
             elif pool_id == "shenbing_baoku" and main_item_type_for_pool == "faqi":  # 新增法器池逻辑
-                if self.prepared_faqi:
-                    chosen_faqi = self._weighted_random_choice(self.prepared_faqi)
+                if self.items_manager.prepared_faqi_pool:
+                    chosen_faqi = self._weighted_random_choice(self.items_manager.prepared_faqi_pool)
                     if chosen_faqi:
                         item_to_return = {
                             "category": "faqi",  # 确保 category 与 main_item_type_for_pool 一致
@@ -233,8 +215,8 @@ class GachaManager:
                     logger.warning(f"无法从法器池中抽取法器，降级为灵石。")
                     chosen_category = "lingshi"  # 强制降级
             elif pool_id == "wanggu_gongfa_ge" and main_item_type_for_pool == "gongfa": # 新增功法池逻辑
-                if self.prepared_gongfa:
-                    chosen_gongfa = self._weighted_random_choice(self.prepared_gongfa)
+                if self.items_manager.prepared_gongfa_pool:
+                    chosen_gongfa = self._weighted_random_choice(self.items_manager.prepared_gongfa_pool)
                     if chosen_gongfa:
                         item_to_return = {
                             "category": "gongfa", # 确保 category 与 main_item_type_for_pool 一致
@@ -246,8 +228,8 @@ class GachaManager:
                     logger.warning(f"无法从功法池中抽取功法，降级为灵石。")
                     chosen_category = "lingshi" # 强制降级
             elif pool_id == "xuanjia_baodian" and main_item_type_for_pool == "fangju":  # 新增防具池逻辑
-                if self.prepared_fangju:
-                    chosen_fangju = self._weighted_random_choice(self.prepared_fangju)
+                if self.items_manager.prepared_fangju_pool:
+                    chosen_fangju = self._weighted_random_choice(self.items_manager.prepared_fangju_pool)
                     if chosen_fangju:
                         item_to_return = {
                             "category": "fangju",  # 确保 category 与 main_item_type_for_pool 一致
@@ -332,22 +314,24 @@ class GachaManager:
 
                 if pool_id == "wanfa_baojian" and guaranteed_item_type_for_this_pool == "shengtong":
                     # 神通的保底是任意神通，不按稀有度筛选（或按需调整）
-                    for st_type_list in self.prepared_shengtongs.values():
+                    for st_type_list in self.items_manager.prepared_shengtongs_pool_by_type.values():
                         guaranteed_item_pool_for_selection.extend(st_type_list)
                 elif pool_id == "shenbing_baoku" and guaranteed_item_type_for_this_pool == "faqi":
                     # 法器保底，筛选 rank <= guaranteed_min_rank_value
                     guaranteed_item_pool_for_selection = [
-                        item for item in self.prepared_faqi if item['rank'] <= min_rank_or_level_for_guarantee
+                        item for item in self.items_manager.prepared_faqi_pool if item['rank'] <= min_rank_or_level_for_guarantee
                     ]
                 elif pool_id == "wanggu_gongfa_ge" and guaranteed_item_type_for_this_pool == "gongfa":  # 新增功法保底
                     # 功法保底，筛选 origin_level <= guaranteed_min_rank_value
                     guaranteed_item_pool_for_selection = [
-                        item for item in self.prepared_gongfa if item['origin_level'] <= min_rank_or_level_for_guarantee
+                        item for item in self.items_manager.prepared_gongfa_pool if
+                        item['origin_level'] <= min_rank_or_level_for_guarantee
                     ]
                 elif pool_id == "xuanjia_baodian" and guaranteed_item_type_for_this_pool == "fangju": # 新增防具保底
                     # 防具保底，筛选 rank <= guaranteed_min_rank_value
                     guaranteed_item_pool_for_selection = [
-                        item for item in self.prepared_fangju if item['rank'] <= min_rank_or_level_for_guarantee
+                        item for item in self.items_manager.prepared_fangju_pool if
+                        item['rank'] <= min_rank_or_level_for_guarantee
                     ]
                 # --- 在这里为后续的功法池、防具池添加 elif ---
 
@@ -392,111 +376,74 @@ class GachaManager:
 
         return {"success": True, "message": message, "rewards": rewards_list}
 
-    def _get_gongfa_origin_level_weight(self, origin_level_value: int) -> int:
-        """
-        根据主修功法的 origin_level 值（即 item_manager 交换前的 level 值，越小越稀有）
-        返回其在抽奖池中的权重。
-        主修功法 origin_level from 主功法.json: 50 (人阶下品) down to 18 (仙阶下品).
-        """
-        # 权重分配策略：origin_level 值越小（越稀有），权重越低。
-        # 这个权重可以参考法器的，或者根据功法的重要性进行调整。
-        if origin_level_value >= 48: return 150  # 人阶下品 (origin_level 50, 49, 48)
-        if origin_level_value >= 43: return 90  # 人阶上品 (origin_level 45, 44, 43)
-        if origin_level_value >= 37: return 50  # 黄阶下品 (origin_level 42, 41, 40, 39, 38, 37)
-        if origin_level_value >= 31: return 20  # 黄阶上品 (origin_level 36, 35, 34, 33, 32, 31)
-        if origin_level_value >= 28: return 10  # 玄阶下品 (origin_level 30, 29, 28)
-        if origin_level_value >= 25: return 6  # 玄阶上品 (origin_level 27, 26, 25)
-        if origin_level_value >= 20: return 2  # 地阶 (origin_level 24, 23, 22, 21, 20)
-        if origin_level_value >= 18: return 1  # 天阶/仙阶 (origin_level 18)
-        logger.warning(f"主修功法的 origin_level 值 {origin_level_value} 超出预期范围 (18-50)，使用默认最低权重1。")
-        return 1
+    # def _prepare_gongfa_pool(self) -> list:
+    #     """
+    #     加载并预处理主修功法数据，为每个功法计算抽奖权重。
+    #     主修功法的 'origin_level' 字段是原始等级整数。
+    #     """
+    #     prepared_gongfa_list = []
+    #     if not self.all_gongfa:
+    #         logger.warning("主修功法数据为空，万古功法阁可能无法正确抽取功法。")
+    #         return prepared_gongfa_list
+    #
+    #     for gongfa_id, gongfa_data in self.all_gongfa.items():
+    #         origin_level_val = gongfa_data.get('origin_level')  # 这是原始的等级数值
+    #         if origin_level_val is None:
+    #             logger.warning(f"主修功法 {gongfa_data.get('name', gongfa_id)} 缺少 'origin_level' 字段，跳过。")
+    #             continue
+    #
+    #         try:
+    #             level_int = int(origin_level_val)
+    #         except (ValueError, TypeError):
+    #             logger.warning(
+    #                 f"主修功法 {gongfa_data.get('name', gongfa_id)} 的 'origin_level' 值 '{origin_level_val}' 不是有效整数，跳过。")
+    #             continue
+    #
+    #         weight = self.items_manager._get_gongfa_origin_level_weight(level_int)
+    #         item_entry = {
+    #             "id": gongfa_id,
+    #             "name": gongfa_data.get('name', f"未知功法{gongfa_id}"),
+    #             "origin_level": level_int,  # 存储原始等级用于保底判断
+    #             "weight": weight,
+    #             "data": gongfa_data  # 存储完整的功法数据
+    #         }
+    #         prepared_gongfa_list.append(item_entry)
+    #
+    #     prepared_gongfa_list.sort(key=lambda x: x['weight'])
+    #     return prepared_gongfa_list
 
-    def _prepare_gongfa_pool(self) -> list:
-        """
-        加载并预处理主修功法数据，为每个功法计算抽奖权重。
-        主修功法的 'origin_level' 字段是原始等级整数。
-        """
-        prepared_gongfa_list = []
-        if not self.all_gongfa:
-            logger.warning("主修功法数据为空，万古功法阁可能无法正确抽取功法。")
-            return prepared_gongfa_list
-
-        for gongfa_id, gongfa_data in self.all_gongfa.items():
-            origin_level_val = gongfa_data.get('origin_level')  # 这是原始的等级数值
-            if origin_level_val is None:
-                logger.warning(f"主修功法 {gongfa_data.get('name', gongfa_id)} 缺少 'origin_level' 字段，跳过。")
-                continue
-
-            try:
-                level_int = int(origin_level_val)
-            except (ValueError, TypeError):
-                logger.warning(
-                    f"主修功法 {gongfa_data.get('name', gongfa_id)} 的 'origin_level' 值 '{origin_level_val}' 不是有效整数，跳过。")
-                continue
-
-            weight = self._get_gongfa_origin_level_weight(level_int)
-            item_entry = {
-                "id": gongfa_id,
-                "name": gongfa_data.get('name', f"未知功法{gongfa_id}"),
-                "origin_level": level_int,  # 存储原始等级用于保底判断
-                "weight": weight,
-                "data": gongfa_data  # 存储完整的功法数据
-            }
-            prepared_gongfa_list.append(item_entry)
-
-        prepared_gongfa_list.sort(key=lambda x: x['weight'])
-        return prepared_gongfa_list
-
-    def _get_fangju_rank_weight(self, rank_value: int) -> int:
-        """
-        根据防具的 rank 值（越小越稀有）返回其在抽奖池中的权重。
-        防具 ranks from 防具.json: 50 (common) down to 18 (rare).
-        权重分配策略：rank 值越小（越稀有），权重越低。
-        """
-        # 权重可以参考法器的，或根据实际稀有度分布调整
-        if rank_value >= 48: return 160  # 例如：rank 50, 49, 48
-        if rank_value >= 43: return 100  # 例如：rank 47-43
-        if rank_value >= 37: return 60  # 例如：rank 42-37
-        if rank_value >= 31: return 30  # 例如：rank 36-31
-        if rank_value >= 28: return 15  # 例如：rank 30-28
-        if rank_value >= 25: return 9  # 例如：rank 27-25
-        if rank_value >= 20: return 2  # 例如：rank 24-20
-        if rank_value >= 18: return 1  # 例如：rank 18
-        logger.warning(f"防具的 rank 值 {rank_value} 超出预期范围 (18-50)，使用默认最低权重1。")
-        return 1
-
-    def _prepare_fangju_pool(self) -> list:
-        """
-        加载并预处理防具数据，为每个防具计算抽奖权重。
-        防具的 'rank' 字段是整数。
-        """
-        prepared_fangju_list = []
-        if not self.all_fangju:
-            logger.warning("防具数据为空，玄甲宝殿可能无法正确抽取防具。")
-            return prepared_fangju_list
-
-        for fangju_id, fangju_data in self.all_fangju.items():
-            rank_val = fangju_data.get('rank')  # 这是整数 rank
-            if rank_val is None:
-                logger.warning(f"防具 {fangju_data.get('name', fangju_id)} 缺少 'rank' 字段，跳过。")
-                continue
-
-            try:
-                rank_int = int(rank_val)
-            except (ValueError, TypeError):
-                logger.warning(
-                    f"防具 {fangju_data.get('name', fangju_id)} 的 'rank' 值 '{rank_val}' 不是有效整数，跳过。")
-                continue
-
-            weight = self._get_fangju_rank_weight(rank_int)
-            item_entry = {
-                "id": fangju_id,
-                "name": fangju_data.get('name', f"未知防具{fangju_id}"),
-                "rank": rank_int,  # 存储整数 rank，用于保底判断
-                "weight": weight,
-                "data": fangju_data  # 存储完整的防具数据
-            }
-            prepared_fangju_list.append(item_entry)
-
-        prepared_fangju_list.sort(key=lambda x: x['weight'])
-        return prepared_fangju_list
+    # def _prepare_fangju_pool(self) -> list:
+    #     """
+    #     加载并预处理防具数据，为每个防具计算抽奖权重。
+    #     防具的 'rank' 字段是整数。
+    #     """
+    #     prepared_fangju_list = []
+    #     if not self.all_fangju:
+    #         logger.warning("防具数据为空，玄甲宝殿可能无法正确抽取防具。")
+    #         return prepared_fangju_list
+    #
+    #     for fangju_id, fangju_data in self.all_fangju.items():
+    #         rank_val = fangju_data.get('rank')  # 这是整数 rank
+    #         if rank_val is None:
+    #             logger.warning(f"防具 {fangju_data.get('name', fangju_id)} 缺少 'rank' 字段，跳过。")
+    #             continue
+    #
+    #         try:
+    #             rank_int = int(rank_val)
+    #         except (ValueError, TypeError):
+    #             logger.warning(
+    #                 f"防具 {fangju_data.get('name', fangju_id)} 的 'rank' 值 '{rank_val}' 不是有效整数，跳过。")
+    #             continue
+    #
+    #         weight = self.items_manager._get_fangju_rank_weight(rank_int)
+    #         item_entry = {
+    #             "id": fangju_id,
+    #             "name": fangju_data.get('name', f"未知防具{fangju_id}"),
+    #             "rank": rank_int,  # 存储整数 rank，用于保底判断
+    #             "weight": weight,
+    #             "data": fangju_data  # 存储完整的防具数据
+    #         }
+    #         prepared_fangju_list.append(item_entry)
+    #
+    #     prepared_fangju_list.sort(key=lambda x: x['weight'])
+    #     return prepared_fangju_list

@@ -8,7 +8,6 @@ from astrbot.api.event import MessageChain
 from astrbot.api.message_components import Image
 import asyncio
 import random
-import astrbot.api.message_components as Comp
 
 from .service import XiuxianService
 from .utils import get_msg_pic
@@ -76,6 +75,12 @@ class XianScheduler:
                 self._start_auction_task, "cron",
                 hour=auction_config.get("cron_hour", 18), minute=auction_config.get("cron_minute", 0), id="auction_start"
             )
+
+        # 每日凌晨1点检查并处理逾期抵押 (时间可以调整)
+        self.scheduler.add_job(self._daily_check_expired_mortgages_task, "cron", hour=1, minute=0,
+                               id="check_expired_mortgages")
+
+
 
     async def _market_auto_add_task(self):
         """定时自动上架商品"""
@@ -202,7 +207,7 @@ class XianScheduler:
                     await self._broadcast_to_groups(msg, "拍卖结果")
                     return # 结束监控
         except Exception as e:
-            logger.error(f"向群 {group_id} 广播消息失败: {e}")
+            logger.error(f"向群  广播消息失败: {e}")
 
     async def _broadcast_to_groups(self, msg: str, title: str = "公告"):
         """向所有活跃群组广播消息"""
@@ -339,3 +344,19 @@ class XianScheduler:
                 self.service.delete_boss(self.plugin_instance.world_boss['id'])
             self.plugin_instance.world_boss = None
             return {"success": False, "message": f"生成世界BOSS时发生内部错误: {e}"}
+
+    async def _scheduled_check_expired_mortgages(self):
+        count = self.service.check_and_handle_expired_mortgages()
+        if count > 0:
+            logger.info(f"定时任务：成功处理了 {count} 条逾期抵押。")
+        else:
+            logger.info("定时任务：未发现逾期抵押。")
+
+    async def _daily_check_expired_mortgages_task(self):
+        """每日定时检查并处理所有用户的逾期抵押"""
+        logger.info("开始执行每日逾期抵押检查任务...")
+        try:
+            # 调用 XiuxianPlugin 实例中的方法
+            await self._scheduled_check_expired_mortgages()
+        except Exception as e:
+            logger.error(f"每日逾期抵押检查任务执行失败: {e}", exc_info=True)
